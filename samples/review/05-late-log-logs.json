@@ -1,0 +1,33 @@
+{
+  "publications": [
+    {
+      "ref": "late.pub-v1",
+      "snapshot_id": "LATEV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000005"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "pending_evidence",
+      "published_at": "2026-11-17T10:00:00Z"
+    }
+  ],
+  "reads": [
+    {
+      "ref": "late.read",
+      "system": "reading",
+      "occurred": {
+        "earliest": "2026-11-17T11:00:00Z",
+        "latest": "2026-11-17T11:00:00Z",
+        "basis": "declared"
+      },
+      "received": {
+        "earliest": "2026-11-17T23:30:00Z",
+        "latest": "2026-11-17T23:30:00Z",
+        "basis": "declared"
+      },
+      "referenced_snapshot_id": "LATEV1"
+    }
+  ]
+}

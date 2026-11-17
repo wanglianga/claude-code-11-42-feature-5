@@ -89,6 +89,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /v1/publications/{scopeType}/{key}/as-of", s.handleSnapshotAsOf)
 
 	m.HandleFunc("GET /v1/operations/overview", s.handleOverview)
+
+	s.reviewRoutes()
 }
 
 // ---- helpers ---------------------------------------------------------------

@@ -1,0 +1,13 @@
+{
+  "target": {
+    "shipment_key": "AWB70000000003",
+    "levels": [
+      "shipment"
+    ],
+    "cutoff_received_at": "2026-11-17T22:00:00Z",
+    "include_read_logs": true,
+    "read_record_ids": [
+      "early.read"
+    ]
+  }
+}

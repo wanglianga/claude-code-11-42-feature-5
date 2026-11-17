@@ -1,0 +1,16 @@
+{
+  "publications": [
+    {
+      "ref": "img.v1",
+      "snapshot_id": "IMGV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000006D"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "publications": [
+    {
+      "ref": "st.v1",
+      "snapshot_id": "STV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000006C"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:00:00Z",
+      "counts": {
+        "confirmed_packages": "3"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000006C"
+        ],
+        "objects": [
+          "PKG-ST-1",
+          "PKG-ST-2",
+          "PKG-ST-3"
+        ]
+      }
+    },
+    {
+      "ref": "st.v2",
+      "snapshot_id": "STV2",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000006C"
+      },
+      "version": 2,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:30:00Z",
+      "counts": {
+        "confirmed_packages": "2"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000006C"
+        ],
+        "objects": [
+          "PKG-ST-1",
+          "PKG-ST-2"
+        ]
+      }
+    }
+  ]
+}

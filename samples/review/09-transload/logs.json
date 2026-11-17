@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "ref": "tl.decl",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T07:00:00Z",
+        "latest": "2026-11-17T07:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000006B"
+        ],
+        "objects": [
+          "PKG-TL-1"
+        ]
+      }
+    },
+    {
+      "ref": "tl.stow-A",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T08:00:00Z",
+        "latest": "2026-11-17T08:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "package_container",
+        "subjects": [
+          "PKG-TL-1"
+        ],
+        "objects": [
+          "AKE-TL-A"
+        ]
+      }
+    },
+    {
+      "ref": "tl.stow-B",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T09:00:00Z",
+        "latest": "2026-11-17T09:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "package_container",
+        "subjects": [
+          "PKG-TL-1"
+        ],
+        "objects": [
+          "AKE-TL-B"
+        ]
+      }
+    }
+  ]
+}

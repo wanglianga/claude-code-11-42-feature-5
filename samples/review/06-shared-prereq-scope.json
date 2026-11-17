@@ -1,0 +1,10 @@
+{
+  "shipment_key": "AWB70000000006",
+  "label": "shared-prerequisite",
+  "included_systems": [
+    "platform",
+    "declaration"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "范围外共享前置：只保留必要因果约束，不披露明细"
+}

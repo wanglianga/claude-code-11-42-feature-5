@@ -724,7 +724,7 @@ func (r *Runner) manifestGapScenario(ctx context.Context) error {
 // verifyAtEnd runs a final "no mutation overwrote history" check across the
 // ledger and asserts every publication replays.
 func (r *Runner) verifyAtEnd(ctx context.Context) {
-	sec := r.section("5. 收尾校验：账本不可变 + 所有版本可复演 + 顶层约束")
+	sec := r.section("6. 收尾校验：账本不可变 + 所有版本可复演 + 顶层约束")
 	n, err := r.svc.Store().Pool().Exec(ctx, "")
 	_ = n
 	_ = err

@@ -1,0 +1,34 @@
+{
+  "target": {
+    "shipment_key": "AWB70000000006C",
+    "levels": [
+      "shipment"
+    ],
+    "instant": {
+      "earliest": "2026-11-17T10:20:00Z",
+      "latest": "2026-11-17T11:00:00Z",
+      "basis": "synchronizer_offset"
+    },
+    "cutoff_received_at": "2026-11-17T22:00:00Z",
+    "claims": [
+      {
+        "level": "shipment",
+        "key": "AWB70000000006C",
+        "status": "verified",
+        "counts": {
+          "confirmed_packages": "3"
+        },
+        "membership": {
+          "link_kind": "shipment_package",
+          "subjects": [
+            "AWB70000000006C"
+          ],
+          "objects": [
+            "PKG-ST-1",
+            "PKG-ST-2"
+          ]
+        }
+      }
+    ]
+  }
+}

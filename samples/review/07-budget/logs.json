@@ -1,0 +1,100 @@
+{
+  "publications": [
+    {
+      "ref": "budget.v1",
+      "snapshot_id": "BUDGETV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:05:00Z"
+    },
+    {
+      "ref": "budget.v2",
+      "snapshot_id": "BUDGETV2",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 2,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:10:00Z"
+    },
+    {
+      "ref": "budget.v3",
+      "snapshot_id": "BUDGETV3",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 3,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:15:00Z"
+    },
+    {
+      "ref": "budget.v4",
+      "snapshot_id": "BUDGETV4",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 4,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:20:00Z"
+    },
+    {
+      "ref": "budget.v5",
+      "snapshot_id": "BUDGETV5",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 5,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:25:00Z"
+    },
+    {
+      "ref": "budget.v6",
+      "snapshot_id": "BUDGETV6",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 6,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:30:00Z"
+    },
+    {
+      "ref": "budget.v7",
+      "snapshot_id": "BUDGETV7",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 7,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:35:00Z"
+    },
+    {
+      "ref": "budget.v8",
+      "snapshot_id": "BUDGETV8",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000007"
+      },
+      "version": 8,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T09:40:00Z"
+    }
+  ]
+}

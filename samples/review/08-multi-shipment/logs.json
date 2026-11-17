@@ -1,0 +1,72 @@
+{
+  "events": [
+    {
+      "ref": "multi.decl1",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T07:00:00Z",
+        "latest": "2026-11-17T07:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000008"
+        ],
+        "objects": [
+          "PKG-M1"
+        ]
+      }
+    },
+    {
+      "ref": "multi.decl2",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T07:05:00Z",
+        "latest": "2026-11-17T07:05:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000009"
+        ],
+        "objects": [
+          "PKG-M2"
+        ]
+      }
+    }
+  ],
+  "publications": [
+    {
+      "ref": "multi.s1v1",
+      "snapshot_id": "MS1V1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000008"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:00:00Z",
+      "input_event_refs": [
+        "multi.decl1"
+      ]
+    },
+    {
+      "ref": "multi.s2v1",
+      "snapshot_id": "MS2V1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000009"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:10:00Z",
+      "input_event_refs": [
+        "multi.decl2"
+      ]
+    }
+  ]
+}

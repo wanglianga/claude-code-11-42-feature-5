@@ -93,6 +93,30 @@
 ### 2.8 审计回放器
 从发布版本回溯：原始事件（按序号+内容哈希校验）→ 图谱关系版本 → 六类规则 → 证据对齐 → 状态融合，**重跑同一引擎**并比对**结果哈希**。`deterministic_match=true` 表示该时点可逐位复演。
 
+### 2.9 历史状态一致性复核（本次新增）
+
+单份快照能否算出来是一回事；**多份历史记录之间能否同时成立**是另一回事。复核模块回答后者，且不重跑安检规则、不重建投递系统：
+
+- **输入**：随项目导入的虚构日志——原始事件、单系统事实批次（`facts`，仅提供同源同启动区段的发生序锚点）、快照发布记录、消费系统实际读取日志、来源时钟可信误差范围。
+- **两个时钟分开**：`occurred`（来源时钟给出的可信区间）与 `received`（平台实际收到时刻）。没有精确发生时刻时只给区间；**不会**直接把截图时间、发布日志时间、扫描时间排成一条线。
+- **序号只在同源同区段内有序**：`(system, stream, boot_segment)` 相同的记录才按 `source_sequence` 建立先后；**重启前后编号不比较**；同一区段内编号复用则该段失去数值次序并显式记为未解决。
+- **因果引用**：发布依赖的事实必须先于该次发布（`input_event_refs`）；消费读取只能引用**已经存在**的快照版本；证据索引必须被归档事件确认。
+- **可见状态**：在待查时刻，状态只能来自该时刻**已发布版本中的有效末项**，并包含其全部前置事实；成员关系、计数必须来自**同一版本**，不能把一份快照的成员与另一份快照的确认数拼成从未发布过的组合。
+- **换装历史归属**沿当时引用判断；当前集装器不能代替旧位置。
+- **多货件比较**要求存在**一套共同可行顺序**支持整个组合，不能把各自单独可行的版本拼起来。
+- **截止点纪律**：`received`/`published_at` 晚于资料截止点的记录进入 `late_arrivals`，只能开启**新的**复核；分析时还会按目标截止点再裁剪一遍。
+- **结论四分**：
+  - `contradicted`：有证据证明不相容（正向分支全部不可满足，且资料本身可满足）；
+  - `both_explain`：存在相容与不相容两种解释（典型：跨设备时钟误差）；
+  - `undetermined`：资料不足或依赖未读原图，尚不能判断；
+  - `consistent`：已核实范围内始终相容（**不等于**证明真实世界一致）。
+- **冲突集合**返回一组已无法同时满足的原始记录与条件；**不声称最小**，也**不声称**唯一根因。
+- **按疑问求解**：把每个“这份截屏的状态当时能否成立”拆成少量约束查询（支持相容的形状 + 支持不相容的形状），只保留必要示例；不导出全部排列。完整穷举只作为**小规模对照校验**（`cross_check=true`）使用。
+- **预算**：可行查询次数上限；耗尽时区分“已找到反例 / 已证明不存在 / 搜索尚未完成”，并明确 `no contradiction found is not a proof of consistency`。
+- **范围裁剪**：保留目标记录的因果前置与共享发布依赖；未授权货件用**只证明必要关系的边界记录**代替明细，连必要关系都不能披露时标记**无法独立复算**。
+- **受限导出**：内部分析与受限材料分别保存引用；字段投影**不改变**相容性结论（`projection_integrity` 会核对两者一致）。
+- **可复算**：每次运行固定所读记录的 id 清单与哈希；`/reproduce` 用旧资料重算，缺记录或哈希不符会明确报错，不用新资料悄悄替换。
+
 ---
 
 ## 3. 技术栈
@@ -110,10 +134,12 @@
 cmd/server/           HTTP 服务入口
 cmd/demo/             端到端演示与验证（一键运行）
 internal/domain/      纯领域逻辑：事件模型、身份图谱、时序、规则、融合、发布（可单测、可复演）
-internal/store/       PostgreSQL 持久层 + append-only schema
+internal/domain/review/ 历史状态一致性复核：约束求解、按疑问分析、穷举对照（纯逻辑）
+internal/store/       PostgreSQL 持久层 + append-only schema（含 review_* 追加表）
 internal/service/     编排：摄入、发布、查询、回放
 internal/api/         HTTP 路由、OpenAPI、Swagger UI
-internal/demo/        样例场景（重复补传 / 拆并包 / 冲突 / 证据缺口 / 更正）
+internal/demo/        样例场景（重复补传 / 拆并包 / 冲突 / 证据缺口 / 更正 / 历史复核）
+samples/review/       可导入的虚构复核日志与各用例预期结论
 internal/api/static/  Swagger UI 静态资源
 docs/                 演示报告等
 ```
@@ -203,6 +229,7 @@ make demo
 6. **舱单缺证据**：舱单引用必需证据索引但账本缺失 → 只能出质量告警与待补证项，**不得**签发确认状态。
 7. **账本不可变**：对 `raw_events` 执行 `UPDATE` 被数据库触发器拒绝。
 8. **历史版本可复演**：每个已发布快照回放 `deterministic_match=true`。
+9. **历史状态一致性复核**（第 5 节，见 7.1b）：跨设备时钟误差、组合不可能、读取早于发布、重启复号、迟到日志、范围外前置、多货件比较、换装归属、快照拼接、原图依赖、预算不足、权限收窄与旧案复算，全部实际计算并断言。
 
 演示输出（节选，完整见 `docs/demo-report.md`）：
 
@@ -212,17 +239,60 @@ make demo
 ## 3. 跨来源冲突 AWB65432100003：冲突待裁定而非代选
 | publish conflict shipment | ✅ | status=conflict_pending conflicts=1 consumable=false |
 ...
-**27/27 checks passed**
+| clock-error case keeps both readings open | ✅ | shipment claim verdict=both_explain |
+| combined screenshots are impossible at one instant | ✅ | combination verdict=contradicted |
+| targeted solver agrees with exhaustive enumeration | ✅ | 2 small-scale exhaustive cross-check(s), all agree |
+...
+**51/51 checks passed**
 ```
+
+### 7.1b 复核专项演示（本次新增）
+
+`make demo` 的第 5 节实际计算以下结论（任一失败即非零退出）：
+
+| 场景 | 计算结论 |
+| --- | --- |
+| 跨设备时钟误差 | 两张截屏各自 `both_explain`；穷举对照一致 |
+| 两张截屏各自成立、组合不可能 | 各自 `both_explain`，`combination=contradicted` |
+| 读取引用了尚未发布的版本 | `contradicted`，冲突集合引用原始记录 |
+| 重启后序号复用 | 跨 boot 段无序号约束，仅同段 1→2 有序 |
+| 迟到日志 | 旧范围 `late_arrivals=1` 不折入；新范围可接收 |
+| 范围外共享前置 | 记录被范围排除，但发布依赖保留为 `unresolved` |
+| 多货件比较 | 同一时刻均 `verified` → `combination=consistent` |
+| 换装历史归属 | 旧时刻声称新集装器 → `contradicted` |
+| 快照拼接 | 成员来自一份、计数来自另一份 → `contradicted` |
+| 依赖原图 | `undetermined`，已有时间约束保留 |
+| 预算不足 | `budget_exhausted=true`、`undetermined`、明确未证明一致 |
+| 权限收窄 + 旧案复算 | 投影后结论不变；旧运行按原资料复现 |
+
+也可单独导入 `samples/review/` 下的虚构日志：
+
+```bash
+B=http://localhost:8080
+SCOPE=$(curl -s -X POST $B/v1/reviews/scopes -H 'content-type: application/json' \
+  -d @samples/review/02-combined-claims-scope.json | jq -r .scope_id)
+CASE=$(curl -s -X POST $B/v1/reviews/cases -H 'content-type: application/json' \
+  -d "{\"scope_id\":\"$SCOPE\"}" | jq -r .case_id)
+curl -s -X POST $B/v1/reviews/scopes/$SCOPE/imports -H 'content-type: application/json' \
+  -d @samples/review/02-combined-claims-logs.json | jq '{imported:.imported_count,late:.late_arrivals}'
+curl -s -X POST $B/v1/reviews/cases/$CASE/runs -H 'content-type: application/json' \
+  -d @samples/review/02-combined-claims-run.json | jq '.run.analysis.summary'
+```
+
+`internal/api/review_samples_test.go` 会把这些文件真正导入并断言上表结论，保证样例不是“摆设”。
 
 ### 7.2 自动化测试
 
 ```bash
-go test ./...                # 单元 + 集成（无数据库时集成自动跳过）
-go test ./internal/domain/ -v   # 纯领域逻辑（无需数据库）
+go test ./...                  # 单元 + 集成（无数据库时集成自动跳过）
+go test ./internal/domain/ -v  # 纯领域逻辑（无需数据库）
+go test ./internal/domain/review/ -v   # 复核纯逻辑（无需数据库）
+make review-test               # 复核领域 + 复核 HTTP 全流程
 ```
 
 - `internal/domain/domain_test.go`：键规范化、契约校验、去重键、阶段排序、拆包版本化、迟到证据判定、冲突/交接/复核/更正融合、舱单证据缺口。
+- `internal/domain/review/`：约束求解（Bellman-Ford 差分约束）、双时钟区间、同源同段序号、重启复号、换装历史归属、快照拼接、多货件共同顺序、预算耗尽、权限收窄、旧案复算，以及**定向求解 vs 穷举**的小规模一致性对照。
+- `internal/api/review_test.go` / `review_samples_test.go`：复核 HTTP 全流程（范围登记→导入→按疑问求解→示例→复算→受限导出），以及真实导入 `samples/review/` 的文件并校验结论。
 - `internal/api/api_test.go`：OpenAPI 与 Swagger UI 可达、摄入幂等（201/200/409/422）、水位线发布生命周期、**append-only 触发器**（真实数据库）、回放匹配。集成测试默认连接 `TEST_DATABASE_URL`（缺省为本地 `ccdev`），不可达则跳过。
 
 ### 7.3 手动验证（HTTP）
@@ -257,6 +327,24 @@ curl -s $B/v1/snapshots/$SNAP | jq '.status, .snapshot_kind, .consumable_confirm
 curl -s $B/v1/snapshots/$SNAP/replay | jq '.deterministic_match, .summary'
 ```
 
+### 7.4 复核接口一览（本次新增）
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| POST | `/v1/reviews/scopes` | 登记范围（货件、允许来源、可披露对象、截止点） |
+| GET | `/v1/reviews/scopes` · `/v1/reviews/scopes/{id}` | 列出 / 读取范围 |
+| GET | `/v1/reviews/scopes/{id}/material` | 范围已导入资料摘要与哈希 |
+| POST | `/v1/reviews/scopes/{id}/imports` | 导入日志（事件 / facts / 发布 / 读取） |
+| POST | `/v1/reviews/cases` | 建案 |
+| POST | `/v1/reviews/cases/{id}/constraints` | **约束检查**（未提疑问）：基础资料本身能否同时满足 |
+| POST | `/v1/reviews/cases/{id}/runs` | **按疑问求解**并固定资料、结论、约束与示例 |
+| GET | `/v1/reviews/cases/{id}/runs` · `/v1/reviews/runs/{id}` | 列出 / 读取运行 |
+| GET | `/v1/reviews/runs/{id}/examples` | 顺序示例（相容与不相容各至少一条） |
+| POST | `/v1/reviews/runs/{id}/reproduce` | 用旧资料复算旧复核 |
+| POST | `/v1/reviews/runs/{id}/export` | 受限材料导出（字段投影 + 边界记录） |
+
+全部接口均有 OpenAPI 3.1 描述，可在 `http://localhost:8080/docs` 交互试用。
+
 ---
 
 ## 8. 关键设计决策
@@ -266,6 +354,10 @@ curl -s $B/v1/snapshots/$SNAP/replay | jq '.deterministic_match, .summary'
 - **确定性结果哈希**：融合结果 + 固定输入（事件序号/内容哈希、图谱版本、规则键）→ SHA-256；回放比对哈希，引擎漂移或账本被改都可发现。
 - **失配证据不转移**：拆包/并包只产生新关系版本；旧包装的迟到证据被显式标记 `superseded_package` 并保留审计，绝不静默归属新子件。
 - **确认状态的门槛**：`consumable_confirmed` 当且仅当"正式快照 + verified"；冲突、待补证、不可发布、暂定一律不被下游当作最终结果。
+- **历史复核按疑问求解而非全排列**：跨系统交错多时，全排列的等待与中间结果迅速膨胀；复核把“这份状态当时能否成立”拆成支持/反对相容的少量约束查询，只留必要示例。代价是追加问题需再次等待，但它保留约束与求值证据，并能在预算不足时明确说“尚未完成”。
+- **两个时钟 + 同源同段序号**：发生时间与接收时间分开建约束；序号只在同源同启动区段内有序。这一条直接排除了“把重启前后编号直接比较”和“按墙钟硬排跨系统顺序”两类误判。
+- **有效末项与同版本约束**：待查时刻的可见状态只来自该时刻已发布版本中的有效末项，成员/计数必须同源同版本；换装历史归属沿当时引用。这让“把两份快照拼成从未发布过的组合”变成可证明的矛盾，而不是靠人工眼力。
+- **矛盾集合不宣称最小**：求解冲突返回一组足够证明不相容的原始记录与条件，并明确说明它未必最小、也不代表唯一根因。
 
 ---
 
@@ -276,4 +368,7 @@ curl -s $B/v1/snapshots/$SNAP/replay | jq '.deterministic_match, .summary'
 - 发布为**显式触发**（调用 `/v1/publications`），未内置定时调度；生产可对接调度器。
 - 航段键形如 `CA1234/2026-11-17/PEK-SHA` 含 `/`，作为路径参数时必须做 URL 编码（`%2F`），例如
   `GET /v1/graph/legs/CA1234%2F2026-11-17%2FPEK-SHA`。
+- 复核求解是**定向**的：默认不导出全部排列，只返回回答疑问所需的最少示例；`cross_check=true` 仅在版本数很小（默认 ≤720 排列）时穷举对照，超过上限不宣称一致。
+- 复核不读取截图图像本体；依赖原图才能确认的内容标记 `requires_image` 并保持 `undetermined`，但不因此推翻已有时间关系。
+- 设备时钟区间需由导入方按其同步协议给出（`basis` 说明来源）；复核不会自行“猜”漂移量。
 - 诊断类读接口（`timeline` / `quality` / `assessment` / `graph`）默认以账本中**最新接收时间**为"当前"（而非服务器墙钟），以适配来源时钟可能超前于服务器的现场情况；需要精确时点请显式传 `cutoff_received_at`。

@@ -1,0 +1,130 @@
+{
+  "events": [
+    {
+      "ref": "skew.decl",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T08:00:00Z",
+        "latest": "2026-11-17T08:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000001"
+        ],
+        "objects": [
+          "PKG-SKEW-1"
+        ]
+      }
+    },
+    {
+      "ref": "skew.stow",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T08:20:00Z",
+        "latest": "2026-11-17T08:20:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "package_container",
+        "subjects": [
+          "PKG-SKEW-1"
+        ],
+        "objects": [
+          "AKE70001MU"
+        ]
+      }
+    },
+    {
+      "ref": "skew.leg",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T08:25:00Z",
+        "latest": "2026-11-17T08:25:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "container_leg",
+        "subjects": [
+          "AKE70001MU"
+        ],
+        "objects": [
+          "CA7000/2026-11-17/PEK-SHA"
+        ]
+      }
+    }
+  ],
+  "publications": [
+    {
+      "ref": "skew.ship-v1",
+      "snapshot_id": "SKEWSHIPV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000001"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "pending_evidence",
+      "published_at": "2026-11-17T10:00:00Z",
+      "consumable_confirmed": false,
+      "input_event_refs": [
+        "skew.decl"
+      ]
+    },
+    {
+      "ref": "skew.ship-v2",
+      "snapshot_id": "SKEWSHIPV2",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000001"
+      },
+      "version": 2,
+      "snapshot_kind": "formal",
+      "status": "pending_evidence",
+      "published_at": "2026-11-17T10:30:00Z",
+      "consumable_confirmed": false,
+      "supersedes_snapshot_id": "SKEWSHIPV1",
+      "input_event_refs": [
+        "skew.decl"
+      ]
+    },
+    {
+      "ref": "skew.cont-v1",
+      "snapshot_id": "SKEWCONTV1",
+      "subject": {
+        "type": "container",
+        "key": "AKE70001MU"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:10:00Z",
+      "consumable_confirmed": true,
+      "input_event_refs": [
+        "skew.stow"
+      ]
+    }
+  ],
+  "reads": [
+    {
+      "ref": "skew.read-container",
+      "system": "reading",
+      "occurred": {
+        "earliest": "2026-11-17T09:40:00Z",
+        "latest": "2026-11-17T10:45:00Z",
+        "basis": "synchronizer_offset"
+      },
+      "received": {
+        "earliest": "2026-11-17T10:30:00Z",
+        "latest": "2026-11-17T10:30:00Z",
+        "basis": "declared"
+      },
+      "referenced_snapshot_id": "SKEWCONTV1",
+      "observed": {
+        "status": "verified",
+        "consumable_confirmed": "true"
+      }
+    }
+  ]
+}

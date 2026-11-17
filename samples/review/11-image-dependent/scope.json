@@ -1,0 +1,9 @@
+{
+  "shipment_key": "AWB70000000006D",
+  "label": "image",
+  "included_systems": [
+    "platform"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "依赖原图才能确认的内容：不宣称已验证，但不推翻已有时间关系"
+}

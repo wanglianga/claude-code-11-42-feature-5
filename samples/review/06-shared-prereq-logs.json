@@ -1,0 +1,49 @@
+{
+  "events": [
+    {
+      "ref": "shared.decl",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T07:00:00Z",
+        "latest": "2026-11-17T07:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000006"
+        ],
+        "objects": [
+          "PKG-SHARED-1"
+        ]
+      }
+    },
+    {
+      "ref": "shared.hub-feed",
+      "system": "packaging_hub",
+      "occurred": {
+        "earliest": "2026-11-17T09:00:00Z",
+        "latest": "2026-11-17T09:00:00Z",
+        "basis": "declared"
+      }
+    }
+  ],
+  "publications": [
+    {
+      "ref": "shared.pub-v1",
+      "snapshot_id": "SHAREDV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000006"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:00:00Z",
+      "input_event_refs": [
+        "shared.decl",
+        "shared.hub-feed"
+      ]
+    }
+  ]
+}

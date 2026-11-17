@@ -1,0 +1,9 @@
+{
+  "shipment_key": "AWB70000000007",
+  "label": "budget",
+  "included_systems": [
+    "platform"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "预算不足：区分尚未完成搜索与已证明不存在"
+}

@@ -1,0 +1,10 @@
+{
+  "shipment_key": "AWB70000000006B",
+  "label": "transload",
+  "included_systems": [
+    "declaration",
+    "platform"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "换装：历史归属沿当时引用判断，当前集装器不能代替旧位置"
+}

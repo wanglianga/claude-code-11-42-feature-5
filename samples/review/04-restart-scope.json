@@ -1,0 +1,9 @@
+{
+  "shipment_key": "AWB70000000004",
+  "label": "restart-sequence",
+  "included_systems": [
+    "scanner"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "设备重启后序号复用，跨区段编号不比较"
+}

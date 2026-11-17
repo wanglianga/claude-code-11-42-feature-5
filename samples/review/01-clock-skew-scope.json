@@ -1,0 +1,11 @@
+{
+  "shipment_key": "AWB70000000001",
+  "label": "clock-skew",
+  "included_systems": [
+    "platform",
+    "reading",
+    "declaration"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "两张截屏来自不同系统，时钟误差导致两种解释"
+}

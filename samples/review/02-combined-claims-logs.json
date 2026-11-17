@@ -1,0 +1,52 @@
+{
+  "events": [
+    {
+      "ref": "combo.decl",
+      "system": "declaration",
+      "occurred": {
+        "earliest": "2026-11-17T07:00:00Z",
+        "latest": "2026-11-17T07:00:00Z",
+        "basis": "declared"
+      },
+      "membership": {
+        "link_kind": "shipment_package",
+        "subjects": [
+          "AWB70000000002"
+        ],
+        "objects": [
+          "PKG-COMBO-1"
+        ]
+      }
+    }
+  ],
+  "publications": [
+    {
+      "ref": "combo.ship-v1",
+      "snapshot_id": "COMBOSHIPV1",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000002"
+      },
+      "version": 1,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T10:00:00Z",
+      "input_event_refs": [
+        "combo.decl"
+      ]
+    },
+    {
+      "ref": "combo.ship-v2",
+      "snapshot_id": "COMBOSHIPV2",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000002"
+      },
+      "version": 2,
+      "snapshot_kind": "formal",
+      "status": "pending_evidence",
+      "published_at": "2026-11-17T10:40:00Z",
+      "supersedes_snapshot_id": "COMBOSHIPV1"
+    }
+  ]
+}

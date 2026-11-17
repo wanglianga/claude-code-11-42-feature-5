@@ -1,0 +1,30 @@
+{
+  "target": {
+    "shipment_key": "AWB70000000006B",
+    "levels": [
+      "shipment",
+      "container"
+    ],
+    "cutoff_received_at": "2026-11-17T22:00:00Z",
+    "claims": [
+      {
+        "level": "container",
+        "key": "AKE-TL-B",
+        "at": {
+          "earliest": "2026-11-17T08:10:00Z",
+          "latest": "2026-11-17T08:40:00Z",
+          "basis": "synchronizer_offset"
+        },
+        "membership": {
+          "link_kind": "package_container",
+          "subjects": [
+            "PKG-TL-1"
+          ],
+          "objects": [
+            "AKE-TL-B"
+          ]
+        }
+      }
+    ]
+  }
+}

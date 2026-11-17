@@ -1,0 +1,33 @@
+{
+  "publications": [
+    {
+      "ref": "early.pub-v2",
+      "snapshot_id": "EARLYV2",
+      "subject": {
+        "type": "shipment",
+        "key": "AWB70000000003"
+      },
+      "version": 2,
+      "snapshot_kind": "formal",
+      "status": "verified",
+      "published_at": "2026-11-17T14:00:00Z"
+    }
+  ],
+  "reads": [
+    {
+      "ref": "early.read",
+      "system": "reading",
+      "occurred": {
+        "earliest": "2026-11-17T13:00:00Z",
+        "latest": "2026-11-17T13:00:00Z",
+        "basis": "declared"
+      },
+      "received": {
+        "earliest": "2026-11-17T13:00:00Z",
+        "latest": "2026-11-17T13:00:00Z",
+        "basis": "declared"
+      },
+      "referenced_snapshot_id": "EARLYV2"
+    }
+  ]
+}

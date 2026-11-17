@@ -1,0 +1,9 @@
+{
+  "target": {
+    "shipment_key": "AWB70000000004",
+    "levels": [
+      "shipment"
+    ],
+    "cutoff_received_at": "2026-11-17T22:00:00Z"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "facts": [
+    {
+      "ref": "restart.fact",
+      "system": "scanner",
+      "boot_segment": "boot-2",
+      "source_sequence": "100",
+      "occurred": {
+        "earliest": "2026-11-17T09:20:00Z",
+        "latest": "2026-11-17T09:20:00Z",
+        "basis": "declared"
+      }
+    }
+  ],
+  "events": [
+    {
+      "ref": "restart.boot1-n5",
+      "system": "scanner",
+      "stream": "SCN-D",
+      "source_sequence": "5",
+      "boot_segment": "boot-1",
+      "occurred": {
+        "earliest": "2026-11-17T08:00:00Z",
+        "latest": "2026-11-17T09:30:00Z",
+        "basis": "occurrence_order_only"
+      }
+    },
+    {
+      "ref": "restart.boot2-n1",
+      "system": "scanner",
+      "stream": "SCN-D",
+      "source_sequence": "1",
+      "boot_segment": "boot-2",
+      "occurred": {
+        "earliest": "2026-11-17T08:00:00Z",
+        "latest": "2026-11-17T09:30:00Z",
+        "basis": "occurrence_order_only"
+      }
+    },
+    {
+      "ref": "restart.boot2-n2",
+      "system": "scanner",
+      "stream": "SCN-D",
+      "source_sequence": "2",
+      "boot_segment": "boot-2",
+      "occurred": {
+        "earliest": "2026-11-17T08:00:00Z",
+        "latest": "2026-11-17T09:30:00Z",
+        "basis": "occurrence_order_only"
+      }
+    }
+  ]
+}

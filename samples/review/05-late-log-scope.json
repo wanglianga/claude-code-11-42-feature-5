@@ -1,0 +1,10 @@
+{
+  "shipment_key": "AWB70000000005",
+  "label": "late-log",
+  "included_systems": [
+    "platform",
+    "reading"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "迟到日志只能进入新复核"
+}

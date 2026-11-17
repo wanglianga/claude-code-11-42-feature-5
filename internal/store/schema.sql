@@ -238,3 +238,117 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+-- ---- Historical consistency review -----------------------------------------
+-- Review material is append-only like the event ledger. Nothing here is derived
+-- in place: an import appends records, a run appends results referencing the
+-- exact material it read, and a re-analysis appends a new run. An old review is
+-- therefore always reproducible from the records it pinned.
+
+CREATE TABLE IF NOT EXISTS review_scopes (
+    scope_id           text        PRIMARY KEY,
+    shipment_key       text        NOT NULL,
+    label              text,
+    included_systems   jsonb       NOT NULL,
+    included_streams   jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    authorized_subjects jsonb      NOT NULL DEFAULT '[]'::jsonb,
+    excluded_systems   jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    cutoff_received_at timestamptz NOT NULL,
+    note               text,
+    registered_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS review_records (
+    id              bigserial PRIMARY KEY,
+    scope_id        text        NOT NULL REFERENCES review_scopes(scope_id),
+    record_id       text        NOT NULL,
+    system          text        NOT NULL,
+    stream          text        NOT NULL,
+    kind            text        NOT NULL,
+    body            jsonb       NOT NULL,
+    content_hash    text        NOT NULL,
+    received_at     timestamptz NOT NULL,
+    imported_at     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (scope_id, record_id)
+);
+
+CREATE INDEX IF NOT EXISTS review_records_scope_idx ON review_records (scope_id, record_id);
+
+CREATE TABLE IF NOT EXISTS review_imports (
+    id              bigserial PRIMARY KEY,
+    scope_id        text        NOT NULL REFERENCES review_scopes(scope_id),
+    batch_key       text        NOT NULL,
+    imported_count  integer     NOT NULL,
+    excluded        jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    late_arrivals   jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    imported_at     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (scope_id, batch_key)
+);
+
+CREATE TABLE IF NOT EXISTS review_cases (
+    case_id          text        PRIMARY KEY,
+    scope_id         text        NOT NULL REFERENCES review_scopes(scope_id),
+    title            text,
+    created_at       timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS review_runs (
+    run_id          uuid        PRIMARY KEY,
+    case_id         text        NOT NULL REFERENCES review_cases(case_id),
+    scope_id        text        NOT NULL,
+    cutoff_received_at timestamptz NOT NULL,
+    target          jsonb       NOT NULL,
+    summary_verdict text        NOT NULL,
+    budget_exhausted boolean    NOT NULL,
+    material_ids    jsonb       NOT NULL,
+    material_hash   text        NOT NULL,
+    analysis        jsonb       NOT NULL,
+    cross_check     jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS review_runs_case_idx ON review_runs (case_id, created_at);
+
+CREATE TABLE IF NOT EXISTS review_examples (
+    example_id      text        NOT NULL,
+    run_id          uuid        NOT NULL REFERENCES review_runs(run_id) ON DELETE RESTRICT,
+    case_id         text        NOT NULL,
+    kind            text        NOT NULL,
+    body            jsonb       NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, example_id)
+);
+
+-- Append-only enforcement for the review tables. Projections and derived
+-- results are always new rows; the source-of-truth records may never be
+-- rewritten, so an exported review and a later re-analysis cannot disagree due
+-- to silent editing.
+CREATE OR REPLACE FUNCTION forbid_review_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'table %.% is append-only: % is not permitted', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP;
+END;
+$$;
+
+DO $$
+DECLARE t text;
+BEGIN
+    FOREACH t IN ARRAY ARRAY[
+        'review_scopes','review_records','review_imports','review_cases',
+        'review_runs','review_examples'
+    ] LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                       WHERE tgname = t || '_append_only' AND tgrelid = t::regclass) THEN
+            EXECUTE format(
+                'CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION forbid_review_mutation()',
+                t || '_append_only', t);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                       WHERE tgname = t || '_no_truncate' AND tgrelid = t::regclass) THEN
+            EXECUTE format(
+                'CREATE TRIGGER %I BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION forbid_review_mutation()',
+                t || '_no_truncate', t);
+        END IF;
+    END LOOP;
+END;
+$$;

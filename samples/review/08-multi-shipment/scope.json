@@ -1,0 +1,16 @@
+{
+  "shipment_key": "AWB70000000008",
+  "label": "multi-shipment",
+  "included_systems": [
+    "platform",
+    "declaration"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "authorized_subjects": [
+    {
+      "type": "shipment",
+      "key": "AWB70000000009"
+    }
+  ],
+  "note": "同时比较多个货件，必须存在一套共同可行顺序"
+}

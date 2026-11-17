@@ -42,5 +42,9 @@ docker-up: ## Build and start db + api via compose
 docker-demo: ## Run the demo scenario in a container
 	docker compose --profile demo run --rm demo
 
+review-test: ## Historical review tests only (no DB for the domain half)
+	$(GO) test ./internal/domain/review/ -v
+	$(GO) test ./internal/api/ -run TestReview -v
+
 clean: ## Remove build artifacts
 	rm -rf bin

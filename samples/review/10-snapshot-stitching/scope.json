@@ -1,0 +1,9 @@
+{
+  "shipment_key": "AWB70000000006C",
+  "label": "stitching",
+  "included_systems": [
+    "platform"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "成员来自一份快照、计数来自另一份：不得拼成从未发布过的组合"
+}

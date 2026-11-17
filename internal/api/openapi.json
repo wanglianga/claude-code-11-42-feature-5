@@ -5,712 +5,4919 @@
     "version": "1.0.0",
     "summary": "Aviation cargo security event data-quality and status publication platform",
     "description": "本平台从运单申报、收货扫描、安检设备、图像索引库、人工复核、集装器台账与航班舱单汇聚关于同一货件的异构事件，按货件/包装/集装器/航段发布**经验证的安检数据状态**及其**证据完整度**，并提供可复演的血缘。\n\n核心保证：\n\n- **追加式账本**：原始事件按来源+幂等键追加保留，数据库触发器禁止 UPDATE/DELETE/TRUNCATE，扫描与复核永不覆盖旧事件。\n- **身份图谱版本化**：运单件↔包装件↔集装器↔航段关系带生效区间，拆包/并包/换装只产生新关系版本，旧关系被追加注销而非删除。\n- **证据失配不转移**：拆包后迟到的旧包装扫描被标记为 `superseded_package`，绝不自动转移给任一子件。\n- **矛盾不代选**：相近时间相互矛盾的设备结论若无交接证据分隔，发布 `conflict_pending`（冲突待裁定），而非挑选一个结果。\n- **证据不齐不冒充确认**：舱单引用已发布状态却缺少必要证据索引时，不生成可供下游消费的确认状态，只输出质量告警与待补证项。\n- **分阶段发布**：`wait_complete` 水位线满员后才发布（时效晚、下游少处理暂定值）；`early_provisional` 先发布暂定快照、来源补齐后再形成带显式差异的正式版本。两种版本各自固定输入版本，可按历史版本逐位复演。\n\n本平台**不执行**物理安检、货物放行、配载或异常处置；业务系统仅消费本平台发布的状态数据和证据链。",
-    "contact": {"name": "Cargo Security Data Platform"}
+    "contact": {
+      "name": "Cargo Security Data Platform"
+    }
   },
   "servers": [
-    {"url": "http://localhost:8080", "description": "本地默认服务"}
+    {
+      "url": "http://localhost:8080",
+      "description": "本地默认服务"
+    }
   ],
   "tags": [
-    {"name": "Health", "description": "健康检查"},
-    {"name": "Contracts", "description": "报文契约注册器：登记各来源的业务键、设备事件号、时间、包装修订、证据索引、字段必填性与兼容策略"},
-    {"name": "Ingest", "description": "原始事件账：按来源与幂等键追加，重复补传被幂等抑制并留痕"},
-    {"name": "Graph", "description": "货件身份图谱：运单件/包装件/集装器/航段关系与版本"},
-    {"name": "Diagnostics", "description": "事件时间归并与质量规则"},
-    {"name": "Watermarks", "description": "水位线：约定关闭点与来源完整性"},
-    {"name": "Publications", "description": "快照发布：暂定/正式版本、增量与时点查询"},
-    {"name": "Audit", "description": "审计回放：从发布版本回溯报文、图谱、规则与人工裁定"},
-    {"name": "Operations", "description": "运营总览"}
+    {
+      "name": "Health",
+      "description": "健康检查"
+    },
+    {
+      "name": "Contracts",
+      "description": "报文契约注册器：登记各来源的业务键、设备事件号、时间、包装修订、证据索引、字段必填性与兼容策略"
+    },
+    {
+      "name": "Ingest",
+      "description": "原始事件账：按来源与幂等键追加，重复补传被幂等抑制并留痕"
+    },
+    {
+      "name": "Graph",
+      "description": "货件身份图谱：运单件/包装件/集装器/航段关系与版本"
+    },
+    {
+      "name": "Diagnostics",
+      "description": "事件时间归并与质量规则"
+    },
+    {
+      "name": "Watermarks",
+      "description": "水位线：约定关闭点与来源完整性"
+    },
+    {
+      "name": "Publications",
+      "description": "快照发布：暂定/正式版本、增量与时点查询"
+    },
+    {
+      "name": "Audit",
+      "description": "审计回放：从发布版本回溯报文、图谱、规则与人工裁定"
+    },
+    {
+      "name": "Operations",
+      "description": "运营总览"
+    },
+    {
+      "name": "Review",
+      "description": "历史状态一致性复核：在导入的原始事件、发布记录、消费读取日志与来源时钟误差范围内，判断一次查询中货件/集装器/航段状态能否在同一组历史事实下同时成立，并区分已证明矛盾、两种解释并存、资料不足"
+    }
   ],
   "paths": {
     "/healthz": {
       "get": {
-        "tags": ["Health"], "operationId": "health", "summary": "健康检查",
-        "responses": {"200": {"description": "服务与数据库可用", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}}}
+        "tags": [
+          "Health"
+        ],
+        "operationId": "health",
+        "summary": "健康检查",
+        "responses": {
+          "200": {
+            "description": "服务与数据库可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/contracts": {
       "post": {
-        "tags": ["Contracts"], "operationId": "registerContract", "summary": "登记报文契约版本",
+        "tags": [
+          "Contracts"
+        ],
+        "operationId": "registerContract",
+        "summary": "登记报文契约版本",
         "description": "为某个来源的某种报文登记契约：声明字段必填性、类型/枚举，以及兼容策略。`strict` 拒绝未声明字段，`backward` 接受并记录漂移，`free` 原样保存。版本号省略时自动递增。",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RegisterContractRequest"}, "example": {
-          "source": "scanner", "message_type": "scan", "compat": "backward",
-          "definition": {"policy": "backward", "fields": [
-            {"name": "mode", "spec": {"kind": "enum", "required": true, "enum": ["arrival","transfer","loading"]}},
-            {"name": "device_id", "spec": {"kind": "string", "required": true}}
-          ]}
-        }}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterContractRequest"
+              },
+              "example": {
+                "source": "scanner",
+                "message_type": "scan",
+                "compat": "backward",
+                "definition": {
+                  "policy": "backward",
+                  "fields": [
+                    {
+                      "name": "mode",
+                      "spec": {
+                        "kind": "enum",
+                        "required": true,
+                        "enum": [
+                          "arrival",
+                          "transfer",
+                          "loading"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "device_id",
+                      "spec": {
+                        "kind": "string",
+                        "required": true
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "201": {"description": "契约已登记", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contract"}}}},
-          "422": {"$ref": "#/components/responses/Unprocessable"}
+          "201": {
+            "description": "契约已登记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contract"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
         }
       },
       "get": {
-        "tags": ["Contracts"], "operationId": "listContracts", "summary": "列出全部契约版本",
-        "responses": {"200": {"description": "契约列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "contracts": {"type": "array", "items": {"$ref": "#/components/schemas/Contract"}},
-          "count": {"type": "integer"}
-        }}}}}}
+        "tags": [
+          "Contracts"
+        ],
+        "operationId": "listContracts",
+        "summary": "列出全部契约版本",
+        "responses": {
+          "200": {
+            "description": "契约列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contracts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Contract"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/sources/{source}/events": {
       "post": {
-        "tags": ["Ingest"], "operationId": "ingestEvent", "summary": "追加一条来源事件",
+        "tags": [
+          "Ingest"
+        ],
+        "operationId": "ingestEvent",
+        "summary": "追加一条来源事件",
         "description": "按来源+幂等键追加原始事件。相同幂等键+相同内容 → `duplicate_identical`（200，幂等抑制）；相同幂等键+不同内容 → `duplicate_conflicting`（409，原事件保留、新内容隔离）；通过契约校验 → `accepted`（201）。缺失必填字段不拒绝，但会降低证据完整度。",
-        "parameters": [{"name": "source", "in": "path", "required": true, "schema": {"type": "string"}, "example": "scanner"}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EventEnvelope"}, "examples": {
-          "scan": {"summary": "收货扫描", "value": {
-            "message_type": "scan", "source_code": "SCN-01", "idempotency_key": "scan-0001",
-            "occurred_at": "2026-11-17T02:10:00Z", "device_id": "SCN-01", "device_event_no": "000041",
-            "package_id": "PKG-A-01", "package_revision": "1",
-            "business_keys": {"awb": "123-45678901", "leg": "CA1234/2026-11-17/PEK-SHA"},
-            "evidence_indexes": ["IMG-0001"], "payload": {"mode": "arrival", "device_id": "SCN-01", "location": "RECV-2"}
-          }},
-          "screening": {"summary": "设备安检结论", "value": {
-            "message_type": "screening", "source_code": "XRY-02", "idempotency_key": "xry-0001",
-            "occurred_at": "2026-11-17T02:20:00Z", "device_id": "XRY-02", "device_event_no": "000900",
-            "package_id": "PKG-A-01", "package_revision": "1",
-            "evidence_indexes": ["IMG-0101", "IMG-0102"], "payload": {"result": "CLEAR", "device_id": "XRY-02", "required_evidence_count": 2}
-          }}
-        }}}},
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "scanner"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventEnvelope"
+              },
+              "examples": {
+                "scan": {
+                  "summary": "收货扫描",
+                  "value": {
+                    "message_type": "scan",
+                    "source_code": "SCN-01",
+                    "idempotency_key": "scan-0001",
+                    "occurred_at": "2026-11-17T02:10:00Z",
+                    "device_id": "SCN-01",
+                    "device_event_no": "000041",
+                    "package_id": "PKG-A-01",
+                    "package_revision": "1",
+                    "business_keys": {
+                      "awb": "123-45678901",
+                      "leg": "CA1234/2026-11-17/PEK-SHA"
+                    },
+                    "evidence_indexes": [
+                      "IMG-0001"
+                    ],
+                    "payload": {
+                      "mode": "arrival",
+                      "device_id": "SCN-01",
+                      "location": "RECV-2"
+                    }
+                  }
+                },
+                "screening": {
+                  "summary": "设备安检结论",
+                  "value": {
+                    "message_type": "screening",
+                    "source_code": "XRY-02",
+                    "idempotency_key": "xry-0001",
+                    "occurred_at": "2026-11-17T02:20:00Z",
+                    "device_id": "XRY-02",
+                    "device_event_no": "000900",
+                    "package_id": "PKG-A-01",
+                    "package_revision": "1",
+                    "evidence_indexes": [
+                      "IMG-0101",
+                      "IMG-0102"
+                    ],
+                    "payload": {
+                      "result": "CLEAR",
+                      "device_id": "XRY-02",
+                      "required_evidence_count": 2
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "201": {"description": "已追加", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/IngestOutcome"}}}},
-          "200": {"description": "幂等重复（内容一致，已抑制）", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/IngestOutcome"}}}},
-          "409": {"description": "同幂等键不同内容，原事件保留", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-          "422": {"$ref": "#/components/responses/Unprocessable"}
+          "201": {
+            "description": "已追加",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOutcome"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "幂等重复（内容一致，已抑制）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOutcome"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "同幂等键不同内容，原事件保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
         }
       }
     },
     "/v1/events": {
       "get": {
-        "tags": ["Ingest"], "operationId": "listEvents", "summary": "按条件列出原始事件（追加序）",
-        "parameters": [
-          {"name": "source", "in": "query", "schema": {"type": "string"}},
-          {"name": "message_type", "in": "query", "schema": {"type": "string"}},
-          {"name": "shipment_key", "in": "query", "schema": {"type": "string"}},
-          {"name": "package_key", "in": "query", "schema": {"type": "string"}},
-          {"name": "up_to_received", "in": "query", "schema": {"type": "string", "format": "date-time"}},
-          {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 200}}
+        "tags": [
+          "Ingest"
         ],
-        "responses": {"200": {"description": "事件列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "events": {"type": "array", "items": {"$ref": "#/components/schemas/Event"}}, "count": {"type": "integer"}}}}}}}
+        "operationId": "listEvents",
+        "summary": "按条件列出原始事件（追加序）",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shipment_key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package_key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "up_to_received",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "事件列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Event"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/events/{id}": {
       "get": {
-        "tags": ["Ingest"], "operationId": "getEvent", "summary": "读取单条原始事件",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "tags": [
+          "Ingest"
+        ],
+        "operationId": "getEvent",
+        "summary": "读取单条原始事件",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "事件", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Event"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "事件",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/events/{id}/attempts": {
       "get": {
-        "tags": ["Ingest"], "operationId": "eventAttempts", "summary": "读取某事件的接收尝试记录（含重复补传）",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
-        "responses": {"200": {"description": "尝试记录", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "event_id": {"type": "string"}, "attempts": {"type": "array", "items": {"$ref": "#/components/schemas/IntakeAttempt"}}}}}}}}
+        "tags": [
+          "Ingest"
+        ],
+        "operationId": "eventAttempts",
+        "summary": "读取某事件的接收尝试记录（含重复补传）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "尝试记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event_id": {
+                      "type": "string"
+                    },
+                    "attempts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntakeAttempt"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/intake-attempts": {
       "get": {
-        "tags": ["Ingest"], "operationId": "listAttempts", "summary": "列出接收尝试（可按来源/幂等键过滤）",
-        "parameters": [
-          {"name": "source", "in": "query", "schema": {"type": "string"}},
-          {"name": "idempotency_key", "in": "query", "schema": {"type": "string"}},
-          {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 200}}
+        "tags": [
+          "Ingest"
         ],
-        "responses": {"200": {"description": "尝试列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "attempts": {"type": "array", "items": {"$ref": "#/components/schemas/IntakeAttempt"}}, "count": {"type": "integer"}}}}}}}
+        "operationId": "listAttempts",
+        "summary": "列出接收尝试（可按来源/幂等键过滤）",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency_key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "尝试列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "attempts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IntakeAttempt"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/graph": {
       "get": {
-        "tags": ["Graph"], "operationId": "graphSubjects", "summary": "列出图谱中的货件/包装/集装器/航段",
-        "responses": {"200": {"description": "图谱主体", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GraphSubjects"}}}}}
+        "tags": [
+          "Graph"
+        ],
+        "operationId": "graphSubjects",
+        "summary": "列出图谱中的货件/包装/集装器/航段",
+        "responses": {
+          "200": {
+            "description": "图谱主体",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphSubjects"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/graph/shipments/{key}": {
       "get": {
-        "tags": ["Graph"], "operationId": "shipmentGraph", "summary": "读取货件身份图谱（含所有历史关系）",
-        "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "货件图谱", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "shipment_key": {"type": "string"},
-          "packages": {"type": "array", "items": {"type": "string"}},
-          "versions": {"type": "array", "items": {"$ref": "#/components/schemas/CompositionVersion"}},
-          "links": {"type": "array", "items": {"$ref": "#/components/schemas/GraphLink"}},
-          "containers": {"type": "array", "items": {"type": "string"}}
-        }}}}}}
+        "tags": [
+          "Graph"
+        ],
+        "operationId": "shipmentGraph",
+        "summary": "读取货件身份图谱（含所有历史关系）",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "货件图谱",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipment_key": {
+                      "type": "string"
+                    },
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CompositionVersion"
+                      }
+                    },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GraphLink"
+                      }
+                    },
+                    "containers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/graph/shipments/{key}/composition": {
       "get": {
-        "tags": ["Graph"], "operationId": "shipmentComposition", "summary": "读取包装组合版本（拆包/并包历史）",
-        "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "组合版本", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "shipment_key": {"type": "string"},
-          "versions": {"type": "array", "items": {"$ref": "#/components/schemas/CompositionVersion"}},
-          "current_packages": {"type": "array", "items": {"type": "string"}}
-        }}}}}}
+        "tags": [
+          "Graph"
+        ],
+        "operationId": "shipmentComposition",
+        "summary": "读取包装组合版本（拆包/并包历史）",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "组合版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipment_key": {
+                      "type": "string"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CompositionVersion"
+                      }
+                    },
+                    "current_packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/graph/containers/{key}": {
       "get": {
-        "tags": ["Graph"], "operationId": "containerGraph", "summary": "读取集装器当前装载与航段",
-        "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "集装器图谱", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "container_key": {"type": "string"},
-          "packages": {"type": "array", "items": {"type": "string"}},
-          "legs": {"type": "array", "items": {"type": "string"}}
-        }}}}}}
+        "tags": [
+          "Graph"
+        ],
+        "operationId": "containerGraph",
+        "summary": "读取集装器当前装载与航段",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "集装器图谱",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "container_key": {
+                      "type": "string"
+                    },
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "legs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/graph/legs/{key}": {
       "get": {
-        "tags": ["Graph"], "operationId": "legGraph", "summary": "读取航段上关联的货件",
-        "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "航段图谱", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "leg_key": {"type": "string"},
-          "shipments": {"type": "array", "items": {"type": "string"}}
-        }}}}}}
+        "tags": [
+          "Graph"
+        ],
+        "operationId": "legGraph",
+        "summary": "读取航段上关联的货件",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "航段图谱",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "leg_key": {
+                      "type": "string"
+                    },
+                    "shipments": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/shipments/{key}/timeline": {
       "get": {
-        "tags": ["Diagnostics"], "operationId": "shipmentTimeline", "summary": "事件时间归并（可解释时序）",
+        "tags": [
+          "Diagnostics"
+        ],
+        "operationId": "shipmentTimeline",
+        "summary": "事件时间归并（可解释时序）",
         "description": "依据交接记录、设备序列号与包装位置，为每条扫描/复核/申报事件建立可解释时序。排序依次为业务阶段、发生时间、设备事件号、接收时间。返回每条事件的排序依据、时钟漂移、证据数量与失配说明。",
         "parameters": [
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "cutoff_received_at", "in": "query", "schema": {"type": "string", "format": "date-time"}}
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cutoff_received_at",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
         ],
-        "responses": {"200": {"description": "归并时序", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "shipment_key": {"type": "string"},
-          "cutoff_received_at": {"type": "string", "format": "date-time"},
-          "entries": {"type": "array", "items": {"$ref": "#/components/schemas/TimelineEntry"}},
-          "anomaly_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
-          "sequence_basis_counts": {"type": "object", "additionalProperties": {"type": "integer"}},
-          "composition_versions": {"type": "array", "items": {"$ref": "#/components/schemas/CompositionVersion"}}
-        }}}}}}
+        "responses": {
+          "200": {
+            "description": "归并时序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipment_key": {
+                      "type": "string"
+                    },
+                    "cutoff_received_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TimelineEntry"
+                      }
+                    },
+                    "anomaly_counts": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "sequence_basis_counts": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "composition_versions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CompositionVersion"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/shipments/{key}/quality": {
       "get": {
-        "tags": ["Diagnostics"], "operationId": "shipmentQuality", "summary": "质量规则检查结果",
+        "tags": [
+          "Diagnostics"
+        ],
+        "operationId": "shipmentQuality",
+        "summary": "质量规则检查结果",
         "description": "检查重复报文、跨包装引用、缺失交接、设备时钟漂移、状态倒流与不一致来源编码。",
         "parameters": [
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "cutoff_received_at", "in": "query", "schema": {"type": "string", "format": "date-time"}}
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cutoff_received_at",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
         ],
-        "responses": {"200": {"description": "质量结果", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "shipment_key": {"type": "string"},
-          "cutoff_received_at": {"type": "string", "format": "date-time"},
-          "summary": {"$ref": "#/components/schemas/QualitySummary"},
-          "violations": {"type": "array", "items": {"$ref": "#/components/schemas/RuleViolation"}},
-          "evidence_dispositions": {"type": "array", "items": {"$ref": "#/components/schemas/DispositionRow"}}
-        }}}}}}
+        "responses": {
+          "200": {
+            "description": "质量结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipment_key": {
+                      "type": "string"
+                    },
+                    "cutoff_received_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "summary": {
+                      "$ref": "#/components/schemas/QualitySummary"
+                    },
+                    "violations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuleViolation"
+                      }
+                    },
+                    "evidence_dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DispositionRow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/shipments/{key}/dispositions": {
       "get": {
-        "tags": ["Diagnostics"], "operationId": "shipmentDispositions", "summary": "证据对齐判定（在效/失配/未知）",
-        "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "判定列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "shipment_key": {"type": "string"}, "count": {"type": "integer"},
-          "dispositions": {"type": "array", "items": {"$ref": "#/components/schemas/DispositionRow"}}
-        }}}}}}
+        "tags": [
+          "Diagnostics"
+        ],
+        "operationId": "shipmentDispositions",
+        "summary": "证据对齐判定（在效/失配/未知）",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "判定列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipment_key": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "dispositions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DispositionRow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/shipments/{key}/assessment": {
       "get": {
-        "tags": ["Diagnostics"], "operationId": "previewAssessment", "summary": "状态融合预览（不发布）",
+        "tags": [
+          "Diagnostics"
+        ],
+        "operationId": "previewAssessment",
+        "summary": "状态融合预览（不发布）",
         "description": "在不发布快照的前提下计算当前状态融合结果：数据状态、证据完整度、冲突、待补证项、血缘输入。`preview=true` 表示这不是已发布版本。",
         "parameters": [
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "cutoff_received_at", "in": "query", "schema": {"type": "string", "format": "date-time"}}
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cutoff_received_at",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
         ],
-        "responses": {"200": {"description": "融合预览", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AssessmentPreview"}}}}}
+        "responses": {
+          "200": {
+            "description": "融合预览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentPreview"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/watermarks": {
       "post": {
-        "tags": ["Watermarks"], "operationId": "createWatermark", "summary": "声明水位线",
+        "tags": [
+          "Watermarks"
+        ],
+        "operationId": "createWatermark",
+        "summary": "声明水位线",
         "description": "为货件/集装器/航段（或 all）声明约定关闭点、必需来源与是否要求交接。`mode=wait_complete` 在水位线满员前不发布；`mode=early_provisional` 在关闭点先发布暂定快照，满员后再发布正式版本。",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateWatermarkRequest"}, "example": {
-          "scope_type": "shipment", "scope_key": "AWB12345678901",
-          "cutoff_received_at": "2026-11-17T03:00:00Z",
-          "required_sources": ["scanner", "screening", "review"],
-          "require_handover": true, "mode": "early_provisional", "label": "PKX-EAST-0715"
-        }}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWatermarkRequest"
+              },
+              "example": {
+                "scope_type": "shipment",
+                "scope_key": "AWB12345678901",
+                "cutoff_received_at": "2026-11-17T03:00:00Z",
+                "required_sources": [
+                  "scanner",
+                  "screening",
+                  "review"
+                ],
+                "require_handover": true,
+                "mode": "early_provisional",
+                "label": "PKX-EAST-0715"
+              }
+            }
+          }
+        },
         "responses": {
-          "201": {"description": "水位线已创建", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Watermark"}}}},
-          "422": {"$ref": "#/components/responses/Unprocessable"}
+          "201": {
+            "description": "水位线已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Watermark"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
         }
       },
       "get": {
-        "tags": ["Watermarks"], "operationId": "listWatermarks", "summary": "列出水位线",
-        "responses": {"200": {"description": "水位线列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "watermarks": {"type": "array", "items": {"$ref": "#/components/schemas/Watermark"}}, "count": {"type": "integer"}}}}}}}
+        "tags": [
+          "Watermarks"
+        ],
+        "operationId": "listWatermarks",
+        "summary": "列出水位线",
+        "responses": {
+          "200": {
+            "description": "水位线列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "watermarks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Watermark"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/watermarks/{id}": {
       "get": {
-        "tags": ["Watermarks"], "operationId": "getWatermark", "summary": "读取水位线（含来源关闭状态）",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "tags": [
+          "Watermarks"
+        ],
+        "operationId": "getWatermark",
+        "summary": "读取水位线（含来源关闭状态）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "水位线", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Watermark"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "水位线",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Watermark"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/watermarks/{id}/close": {
       "post": {
-        "tags": ["Watermarks"], "operationId": "closeWatermarkSource", "summary": "登记某来源已完成交接/关闭",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["source"], "properties": {
-          "source": {"type": "string"}, "note": {"type": "string"}
-        }}}}},
+        "tags": [
+          "Watermarks"
+        ],
+        "operationId": "closeWatermarkSource",
+        "summary": "登记某来源已完成交接/关闭",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "更新后的水位线", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Watermark"}}}},
-          "422": {"$ref": "#/components/responses/Unprocessable"}
+          "200": {
+            "description": "更新后的水位线",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Watermark"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
         }
       }
     },
     "/v1/publications": {
       "post": {
-        "tags": ["Publications"], "operationId": "publish", "summary": "计算并发布快照",
+        "tags": [
+          "Publications"
+        ],
+        "operationId": "publish",
+        "summary": "计算并发布快照",
         "description": "按水位线策略计算并发布快照。`wait_complete` 未满员 → 202 skipped；`early_provisional` 未满员 → 201 暂定快照；满员 → 201 正式快照。每个版本固定输入事件序号、图谱关系版本、规则键与权重，并给出相对上一版本的显式差异。只有正式且状态为 `verified` 的版本 `consumable_confirmed=true`。",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PublishRequest"}, "example": {
-          "scope_type": "shipment", "scope_key": "AWB12345678901", "watermark_id": "00000000-0000-0000-0000-000000000000"
-        }}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              },
+              "example": {
+                "scope_type": "shipment",
+                "scope_key": "AWB12345678901",
+                "watermark_id": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        },
         "responses": {
-          "201": {"description": "已发布快照", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PublishResult"}}}},
-          "202": {"description": "水位线未满员，按策略跳过发布", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PublishResult"}}}},
-          "422": {"$ref": "#/components/responses/Unprocessable"}
+          "201": {
+            "description": "已发布快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "水位线未满员，按策略跳过发布",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
         }
       }
     },
     "/v1/snapshots": {
       "get": {
-        "tags": ["Publications"], "operationId": "listSnapshots", "summary": "列出最近发布的快照",
-        "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer", "default": 100}}],
-        "responses": {"200": {"description": "快照列表", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "snapshots": {"type": "array", "items": {"$ref": "#/components/schemas/Snapshot"}}, "count": {"type": "integer"}}}}}}}
+        "tags": [
+          "Publications"
+        ],
+        "operationId": "listSnapshots",
+        "summary": "列出最近发布的快照",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "快照列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "snapshots": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Snapshot"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/snapshots/{id}": {
       "get": {
-        "tags": ["Publications"], "operationId": "getSnapshot", "summary": "读取快照（含完整数据集与血缘）",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "tags": [
+          "Publications"
+        ],
+        "operationId": "getSnapshot",
+        "summary": "读取快照（含完整数据集与血缘）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "快照", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Snapshot"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/snapshots/{id}/replay": {
       "get": {
-        "tags": ["Audit"], "operationId": "replaySnapshot", "summary": "审计回放：复演一次发布",
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "replaySnapshot",
+        "summary": "审计回放：复演一次发布",
         "description": "从发布版本回溯到报文、图谱关系、质量规则、证据对齐与人工裁定，按固定输入重新运行引擎并比对结果哈希。`deterministic_match=true` 表示该时点状态可被逐位复演。",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "回放结果", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReplayResult"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "回放结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/publications/{scopeType}/{key}/latest": {
       "get": {
-        "tags": ["Publications"], "operationId": "latestSnapshot", "summary": "读取最新快照（增量消费者入口）",
+        "tags": [
+          "Publications"
+        ],
+        "operationId": "latestSnapshot",
+        "summary": "读取最新快照（增量消费者入口）",
         "parameters": [
-          {"name": "scopeType", "in": "path", "required": true, "schema": {"type": "string", "enum": ["shipment","container","leg"]}},
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "kind", "in": "query", "schema": {"type": "string", "enum": ["provisional","formal"]}}
+          {
+            "name": "scopeType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shipment",
+                "container",
+                "leg"
+              ]
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "provisional",
+                "formal"
+              ]
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "最新快照", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Snapshot"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "最新快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/publications/{scopeType}/{key}/history": {
       "get": {
-        "tags": ["Publications"], "operationId": "snapshotHistory", "summary": "读取全部版本历史",
-        "parameters": [
-          {"name": "scopeType", "in": "path", "required": true, "schema": {"type": "string", "enum": ["shipment","container","leg"]}},
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}
+        "tags": [
+          "Publications"
         ],
-        "responses": {"200": {"description": "版本历史", "content": {"application/json": {"schema": {"type": "object", "properties": {
-          "scope_type": {"type": "string"}, "scope_key": {"type": "string"}, "count": {"type": "integer"},
-          "snapshots": {"type": "array", "items": {"$ref": "#/components/schemas/Snapshot"}}
-        }}}}}}
+        "operationId": "snapshotHistory",
+        "summary": "读取全部版本历史",
+        "parameters": [
+          {
+            "name": "scopeType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shipment",
+                "container",
+                "leg"
+              ]
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "版本历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope_type": {
+                      "type": "string"
+                    },
+                    "scope_key": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "snapshots": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Snapshot"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/publications/{scopeType}/{key}/as-of": {
       "get": {
-        "tags": ["Publications"], "operationId": "snapshotAsOf", "summary": "时点查询：某关闭点当时可读的版本",
+        "tags": [
+          "Publications"
+        ],
+        "operationId": "snapshotAsOf",
+        "summary": "时点查询：某关闭点当时可读的版本",
         "description": "返回 `cutoff_received_at <= asOf` 的最新一版快照，用于复现“当时下游读到的是什么”。",
         "parameters": [
-          {"name": "scopeType", "in": "path", "required": true, "schema": {"type": "string", "enum": ["shipment","container","leg"]}},
-          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}},
-          {"name": "cutoff_received_at", "in": "query", "required": true, "schema": {"type": "string", "format": "date-time"}},
-          {"name": "kind", "in": "query", "schema": {"type": "string", "enum": ["provisional","formal"]}}
+          {
+            "name": "scopeType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shipment",
+                "container",
+                "leg"
+              ]
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cutoff_received_at",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "provisional",
+                "formal"
+              ]
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "时点快照", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Snapshot"}}}},
-          "400": {"description": "缺少 as-of 参数", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
+          "200": {
+            "description": "时点快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 as-of 参数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/v1/operations/overview": {
       "get": {
-        "tags": ["Operations"], "operationId": "overview", "summary": "运营总览（事件计数、来源跨度、图谱主体、近期快照、水位线）",
-        "responses": {"200": {"description": "总览", "content": {"application/json": {"schema": {"type": "object"}}}}}
+        "tags": [
+          "Operations"
+        ],
+        "operationId": "overview",
+        "summary": "运营总览（事件计数、来源跨度、图谱主体、近期快照、水位线）",
+        "responses": {
+          "200": {
+            "description": "总览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reviews/scopes": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "registerReviewScope",
+        "summary": "登记复核范围",
+        "description": "登记一次复核可使用的资料范围：目标货件、允许的来源系统与流、可披露的对象、资料截止点。范围只收紧不扩大；分析时再次按截止点裁剪，截止点之后到达的记录不能进入旧案卷。",
+        "responses": {
+          "201": {
+            "description": "范围已登记",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "范围无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewScopeRequest"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "listReviewScopes",
+        "summary": "列出复核范围",
+        "description": "列出已登记范围（新的在前）。",
+        "responses": {
+          "200": {
+            "description": "范围列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScopeList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reviews/scopes/{id}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "getReviewScope",
+        "summary": "读取复核范围",
+        "description": "按 id 读取一个范围登记。",
+        "responses": {
+          "200": {
+            "description": "范围",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": ""
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/scopes/{id}/material": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "reviewMaterialSummary",
+        "summary": "范围资料摘要",
+        "description": "列出某范围已导入记录的条数、按类别/来源统计与资料哈希（只含已通过截止点裁剪的持久化记录）。",
+        "responses": {
+          "200": {
+            "description": "资料摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewMaterialSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/scopes/{id}/imports": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "importReviewLogs",
+        "summary": "导入复核日志",
+        "description": "导入随项目提供的虚构日志：原始事件、单系统事实批次（序号锚点）、快照发布记录、消费系统实际读取日志。\n\n- 出现时间与收到时间分别保存；截止点之后才收到的记录进入 `late_arrivals`，不会悄悄补进旧案卷。\n- 同一 `(scope, record_id)` 内容相同视为补传幂等；内容不同拒绝覆盖。\n- 序号只在同一来源、同一启动区段内可比较；重启前后编号不直接比较。",
+        "responses": {
+          "201": {
+            "description": "已导入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewImportResult"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "无新记录/仅迟到记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewImportResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "同 id 不同内容或批次重复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewLogImport"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reviews/cases": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "createReviewCase",
+        "summary": "建立复核案件",
+        "description": "在指定范围内建立复核案件；分析运行与非正式材料都挂在案件下。",
+        "responses": {
+          "201": {
+            "description": "案件已建立",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCase"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "范围不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewCaseCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reviews/cases/{id}/runs": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "runReviewAnalysis",
+        "summary": "按疑问求解复核",
+        "description": "对固定目标执行定向求解：逐条提出“该状态在待查时刻能否成立”的疑问，分别寻找支持相容与支持冲突的共同状态，只保留必要示例，不导出全部排列。\n\n结论至少区分：\n- `contradicted`：有证据证明不相容；\n- `both_explain`：存在相容与不相容两种解释；\n- `undetermined`：资料不足尚不能判断；\n- `consistent`：已核实范围内始终相容。\n\n预算耗尽时区分“已找到反例/已证明不存在/搜索尚未完成”，未找到矛盾不等于证明一致。",
+        "responses": {
+          "201": {
+            "description": "已计算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRunResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "案件不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "目标越界或无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRunRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "listReviewRuns",
+        "summary": "列出案件运行",
+        "description": "按时间倒序列出该案件的复核运行，含每次固定的资料哈希。",
+        "responses": {
+          "200": {
+            "description": "运行列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRunList"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/runs/{id}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "getReviewRun",
+        "summary": "读取复核运行",
+        "description": "按 id 读取一次运行及其完整分析（含约束与求值证据）。",
+        "responses": {
+          "200": {
+            "description": "运行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRun"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/runs/{id}/examples": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "reviewRunExamples",
+        "summary": "顺序示例查询",
+        "description": "读取该运行保留的顺序示例：相容顺序与不相容顺序各给出至少一条可复核例子，不要求导出所有排列。",
+        "responses": {
+          "200": {
+            "description": "示例列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewExampleList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/runs/{id}/reproduce": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "reproduceReviewRun",
+        "summary": "复算旧复核",
+        "description": "用该运行当初固定的原始记录重新求解，确认结论仍可由旧资料重现；固定记录缺失会明确报错，不会用新资料悄悄替换。",
+        "responses": {
+          "200": {
+            "description": "复算结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRunResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "固定记录缺失",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "资料哈希不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewReproduceRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/runs/{id}/export": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "exportReviewRun",
+        "summary": "受限材料导出",
+        "description": "按允许输出字段与授权对象导出复核结果。字段投影只隐藏字段、不改变相容性结论；涉及未授权货件时用只证明必要关系的边界记录代替明细，若连必要关系也不能披露则标记无法独立复算。",
+        "responses": {
+          "200": {
+            "description": "受限导出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewExport"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewExportRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/reviews/cases/{id}/constraints": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "operationId": "reviewConstraintCheck",
+        "summary": "约束检查（未提疑问）",
+        "description": "只构建共享约束系统（双时钟区间、收到语义、同源同段序号、发布前置）并判断基础资料本身能否同时满足。在任何具体疑问提出前先做的快速一致性检查：不可满足时返回一组原始记录与条件（不声称最小）。",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cutoff_received_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "budget": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "检查结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "case_id": {
+                      "type": "string"
+                    },
+                    "cutoff_received_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "feasible": {
+                      "type": "boolean"
+                    },
+                    "budget_exhausted": {
+                      "type": "boolean"
+                    },
+                    "checks_used": {
+                      "type": "integer"
+                    },
+                    "constraint_count": {
+                      "type": "integer"
+                    },
+                    "conflict": {
+                      "$ref": "#/components/schemas/ConflictSet"
+                    },
+                    "unresolved": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "material": {
+                      "type": "object"
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "案件不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     }
   },
   "components": {
     "responses": {
-      "NotFound": {"description": "未找到", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
-      "Unprocessable": {"description": "请求不合法或契约校验失败", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      "NotFound": {
+        "description": "未找到",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unprocessable": {
+        "description": "请求不合法或契约校验失败",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
     },
     "schemas": {
-      "Health": {"type": "object", "properties": {"status": {"type": "string"}, "time": {"type": "string", "format": "date-time"}}},
-      "Error": {"type": "object", "properties": {"error": {"type": "string"}, "code": {"type": "string"}, "details": {}}},
-      "FieldSpec": {"type": "object", "required": ["kind","required"], "properties": {
-        "kind": {"type": "string", "enum": ["string","number","boolean","object","array","enum","timestamp"]},
-        "required": {"type": "boolean"},
-        "enum": {"type": "array", "items": {"type": "string"}}
-      }},
-      "FieldBinding": {"type": "object", "required": ["name","spec"], "properties": {
-        "name": {"type": "string"}, "spec": {"$ref": "#/components/schemas/FieldSpec"}
-      }},
-      "ContractDefinition": {"type": "object", "required": ["fields","policy"], "properties": {
-        "fields": {"type": "array", "items": {"$ref": "#/components/schemas/FieldBinding"}},
-        "policy": {"type": "string", "enum": ["strict","backward","free"]}
-      }},
-      "RegisterContractRequest": {"type": "object", "required": ["source","message_type","compat","definition"], "properties": {
-        "source": {"type": "string"}, "message_type": {"type": "string"},
-        "version": {"type": "integer"}, "compat": {"type": "string", "enum": ["strict","backward","free"]},
-        "definition": {"$ref": "#/components/schemas/ContractDefinition"}
-      }},
-      "Contract": {"type": "object", "properties": {
-        "id": {"type": "integer"}, "source": {"type": "string"}, "message_type": {"type": "string"},
-        "version": {"type": "integer"}, "compat": {"type": "string"},
-        "definition": {"$ref": "#/components/schemas/ContractDefinition"},
-        "status": {"type": "string"}, "registered_at": {"type": "string", "format": "date-time"}
-      }},
-      "EventEnvelope": {"type": "object", "required": ["message_type","occurred_at","payload"], "properties": {
-        "message_type": {"type": "string", "enum": ["declaration","scan","screening","evidence","manual_review","container_stow","flight_manifest","package_change","handover"]},
-        "source_code": {"type": "string"},
-        "idempotency_key": {"type": "string", "description": "来源内唯一幂等键；缺省时由设备事件号或内容派生"},
-        "occurred_at": {"type": "string", "format": "date-time", "description": "业务发生时间"},
-        "received_at": {"type": "string", "format": "date-time", "description": "平台接收时间；省略时为入库时刻"},
-        "device_id": {"type": "string"},
-        "device_event_no": {"type": "string", "description": "设备事件号，用于同设备去重与时序"},
-        "package_id": {"type": "string"},
-        "package_revision": {"type": "string", "description": "包装修订；规范化为数字"},
-        "business_keys": {"type": "object", "additionalProperties": {"type": "string"}, "description": "业务键：awb/shipment/package/container/leg"},
-        "evidence_indexes": {"type": "array", "items": {"type": "string"}},
-        "supersedes_event_id": {"type": "string", "format": "uuid", "description": "人工更正指向被更正事件"},
-        "payload": {"type": "object", "additionalProperties": true}
-      }},
-      "ValidationResult": {"type": "object", "properties": {
-        "ok": {"type": "boolean"}, "missing_fields": {"type": "array", "items": {"type": "string"}},
-        "unmapped_fields": {"type": "array", "items": {"type": "string"}},
-        "errors": {"type": "array", "items": {"type": "string"}}
-      }},
-      "IngestOutcome": {"type": "object", "properties": {
-        "outcome": {"type": "string", "enum": ["accepted","duplicate_identical","duplicate_conflicting"]},
-        "event_id": {"type": "string", "format": "uuid"}, "seq": {"type": "integer"},
-        "duplicate_of": {"type": "string", "format": "uuid"},
-        "validation": {"$ref": "#/components/schemas/ValidationResult"},
-        "contract": {"type": "string"}, "warnings": {"type": "array", "items": {"type": "string"}},
-        "detail": {}, "committed_at": {"type": "string", "format": "date-time"}
-      }},
-      "Event": {"type": "object", "properties": {
-        "Seq": {"type": "integer"}, "EventID": {"type": "string"}, "Source": {"type": "string"},
-        "MessageType": {"type": "string"}, "SourceCode": {"type": "string"},
-        "ContractVersion": {"type": "integer"}, "IdempotencyKey": {"type": "string"},
-        "DedupeKey": {"type": "string"},
-        "BusinessKeys": {"type": "object", "additionalProperties": {"type": "string"}},
-        "RawBusinessKeys": {"type": "object", "additionalProperties": {"type": "string"}},
-        "PackageID": {"type": "string"}, "PackageKey": {"type": "string"},
-        "PackageRevision": {"type": "string"}, "ShipmentKey": {"type": "string"},
-        "DeviceID": {"type": "string"}, "DeviceEventNo": {"type": "string"},
-        "EvidenceIndexes": {"type": "array", "items": {"type": "string"}},
-        "OccurredAt": {"type": "string", "format": "date-time"},
-        "ReceivedAt": {"type": "string", "format": "date-time"},
-        "Payload": {"type": "object", "additionalProperties": true},
-        "ContentHash": {"type": "string"}, "SupersedesEventID": {"type": "string"},
-        "MissingFields": {"type": "array", "items": {"type": "string"}},
-        "UnmappedFields": {"type": "array", "items": {"type": "string"}}
-      }},
-      "IntakeAttempt": {"type": "object", "properties": {
-        "source": {"type": "string"}, "message_type": {"type": "string"},
-        "source_code": {"type": "string"}, "idempotency_key": {"type": "string"},
-        "content_hash": {"type": "string"}, "occurred_at": {"type": "string", "format": "date-time"},
-        "received_at": {"type": "string", "format": "date-time"},
-        "outcome": {"type": "string", "enum": ["accepted","duplicate_identical","duplicate_conflicting","rejected"]},
-        "detail": {}, "raw_event_id": {"type": "string"}
-      }},
-      "GraphSubjects": {"type": "object", "properties": {
-        "shipments": {"type": "array", "items": {"type": "string"}},
-        "containers": {"type": "array", "items": {"type": "string"}},
-        "legs": {"type": "array", "items": {"type": "string"}},
-        "packages": {"type": "array", "items": {"type": "string"}}
-      }},
-      "GraphLink": {"type": "object", "properties": {
-        "id": {"type": "integer"}, "link_key": {"type": "string"}, "link_version": {"type": "integer"},
-        "kind": {"type": "string", "enum": ["shipment_package","package_container","container_leg"]},
-        "subject_type": {"type": "string"}, "subject_key": {"type": "string"},
-        "object_type": {"type": "string"}, "object_key": {"type": "string"},
-        "valid_from": {"type": "string", "format": "date-time"},
-        "knowledge_at": {"type": "string", "format": "date-time"},
-        "package_revision": {"type": "string"}, "source_event_id": {"type": "string"},
-        "attributes": {"type": "object", "additionalProperties": {"type": "string"}},
-        "retracted_at": {"type": "string", "format": "date-time"},
-        "retraction_knowledge_at": {"type": "string", "format": "date-time"},
-        "retraction_reason": {"type": "string"}
-      }},
-      "CompositionVersion": {"type": "object", "properties": {
-        "version": {"type": "integer"}, "package_keys": {"type": "array", "items": {"type": "string"}},
-        "effective_from": {"type": "string", "format": "date-time"},
-        "knowledge_at": {"type": "string", "format": "date-time"},
-        "source_event_id": {"type": "string"}, "cause": {"type": "string"}
-      }},
-      "TimelineEntry": {"type": "object", "properties": {
-        "event_id": {"type": "string"}, "source": {"type": "string"}, "message_type": {"type": "string"},
-        "source_code": {"type": "string"}, "package_key": {"type": "string"},
-        "stage": {"type": "integer"}, "stage_name": {"type": "string"},
-        "occurred_at": {"type": "string", "format": "date-time"},
-        "received_at": {"type": "string", "format": "date-time"},
-        "sort_key": {"type": "string"}, "sequence_basis": {"type": "string"},
-        "clock_drift_ms": {"type": "integer"}, "sequence_no": {"type": "string"},
-        "package_revision": {"type": "string"}, "evidence_count": {"type": "integer"},
-        "explanation": {"type": "string"}, "anomalies": {"type": "array", "items": {"type": "string"}}
-      }},
-      "QualitySummary": {"type": "object", "properties": {
-        "event_count": {"type": "integer"}, "sources": {"type": "array", "items": {"type": "string"}},
-        "violations_by_code": {"type": "object", "additionalProperties": {"type": "integer"}},
-        "blocking_codes": {"type": "array", "items": {"type": "string"}},
-        "warning_count": {"type": "integer"}, "info_count": {"type": "integer"},
-        "unaligned_evidence_count": {"type": "integer"}, "missing_required_fields": {"type": "integer"}
-      }},
-      "RuleViolation": {"type": "object", "properties": {
-        "code": {"type": "string", "enum": ["duplicate_retransmission","cross_package_reference","missing_handover","device_clock_drift","status_regression","inconsistent_source_encoding"]},
-        "severity": {"type": "string", "enum": ["info","warning","error","blocker"]},
-        "subject_type": {"type": "string"}, "subject_key": {"type": "string"},
-        "dedupe_key": {"type": "string"}, "knowledge_at": {"type": "string", "format": "date-time"},
-        "detail": {}, "related_event_ids": {"type": "array", "items": {"type": "string"}},
-        "first_detected_at": {"type": "string", "format": "date-time"}
-      }},
-      "DispositionRow": {"type": "object", "properties": {
-        "event_id": {"type": "string"}, "shipment_key": {"type": "string"}, "package_key": {"type": "string"},
-        "disposition": {"type": "string", "enum": ["ok","unknown_package","superseded_package","revision_mismatch","container_mismatch"]},
-        "reason": {"type": "string"}, "knowledge_at": {"type": "string", "format": "date-time"},
-        "event_message_type": {"type": "string"}, "event_source": {"type": "string"}
-      }},
-      "PackageState": {"type": "object", "properties": {
-        "package_key": {"type": "string"}, "result": {"type": "string"},
-        "result_event_id": {"type": "string"}, "result_source": {"type": "string"},
-        "result_at": {"type": "string", "format": "date-time"},
-        "human_ruled": {"type": "boolean"}, "evidence_eligible": {"type": "boolean"},
-        "disposition": {"type": "string"}, "disposition_reason": {"type": "string"},
-        "screening_event_ids": {"type": "array", "items": {"type": "string"}},
-        "review_event_ids": {"type": "array", "items": {"type": "string"}},
-        "resegment_count": {"type": "integer"}, "in_conflict": {"type": "boolean"}
-      }},
-      "Component": {"type": "object", "properties": {
-        "key": {"type": "string"}, "label": {"type": "string"}, "weight": {"type": "number"},
-        "score": {"type": "number"}, "contribution": {"type": "number"},
-        "detail": {"type": "string"}, "missing": {"type": "array", "items": {"type": "string"}},
-        "source_events": {"type": "array", "items": {"type": "string"}}
-      }},
-      "PendingItem": {"type": "object", "properties": {
-        "code": {"type": "string"}, "detail": {"type": "string"},
-        "package_key": {"type": "string"}, "severity": {"type": "string"}
-      }},
-      "Conflict": {"type": "object", "properties": {
-        "package_key": {"type": "string"},
-        "window_start": {"type": "string", "format": "date-time"},
-        "window_end": {"type": "string", "format": "date-time"},
-        "results": {"type": "array", "items": {"$ref": "#/components/schemas/ConflictSide"}},
-        "reason": {"type": "string"}
-      }},
-      "ConflictSide": {"type": "object", "properties": {
-        "event_id": {"type": "string"}, "source": {"type": "string"}, "result": {"type": "string"},
-        "occurred_at": {"type": "string", "format": "date-time"},
-        "received_at": {"type": "string", "format": "date-time"}
-      }},
-      "Correction": {"type": "object", "properties": {
-        "correcting_event_id": {"type": "string"}, "superseded_event_id": {"type": "string"},
-        "applied_at": {"type": "string", "format": "date-time"},
-        "from_result": {"type": "string"}, "to_result": {"type": "string"},
-        "source": {"type": "string"}, "note": {"type": "string"}
-      }},
-      "AssessmentPreview": {"type": "object", "properties": {
-        "shipment_key": {"type": "string"},
-        "cutoff_received_at": {"type": "string", "format": "date-time"},
-        "preview": {"type": "boolean"},
-        "completeness_floor": {"type": "number"},
-        "fusion": {"$ref": "#/components/schemas/FusionResult"},
-        "rule_findings": {"type": "array", "items": {"$ref": "#/components/schemas/RuleViolation"}},
-        "dispositions": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/Disposition"}},
-        "timeline": {"type": "array", "items": {"$ref": "#/components/schemas/TimelineEntry"}}
-      }},
-      "Disposition": {"type": "object", "properties": {
-        "event_id": {"type": "string"}, "shipment_key": {"type": "string"}, "package_key": {"type": "string"},
-        "disposition": {"type": "string"}, "reason": {"type": "string"},
-        "knowledge_at": {"type": "string", "format": "date-time"}
-      }},
-      "FusionResult": {"type": "object", "properties": {
-        "status": {"type": "string", "enum": ["verified","pending_evidence","conflict_pending","not_publishable"]},
-        "security_result": {"type": "string"},
-        "evidence_completeness": {"type": "number"},
-        "completeness_components": {"type": "array", "items": {"$ref": "#/components/schemas/Component"}},
-        "packages": {"type": "array", "items": {"$ref": "#/components/schemas/PackageState"}},
-        "pending_items": {"type": "array", "items": {"$ref": "#/components/schemas/PendingItem"}},
-        "conflicts": {"type": "array", "items": {"$ref": "#/components/schemas/Conflict"}},
-        "corrections": {"type": "array", "items": {"$ref": "#/components/schemas/Correction"}},
-        "blocking_rule_codes": {"type": "array", "items": {"type": "string"}},
-        "blocking_reasons": {"type": "array", "items": {"type": "string"}},
-        "input_event_ids": {"type": "array", "items": {"type": "string"}},
-        "input_graph_links": {"type": "array", "items": {"type": "string"}},
-        "input_rule_keys": {"type": "array", "items": {"type": "string"}},
-        "decision_explanation": {"type": "string"}
-      }},
-      "CreateWatermarkRequest": {"type": "object", "required": ["scope_type","scope_key","required_sources","mode"], "properties": {
-        "scope_type": {"type": "string", "enum": ["shipment","container","leg","all"]},
-        "scope_key": {"type": "string"},
-        "cutoff_received_at": {"type": "string", "format": "date-time"},
-        "required_sources": {"type": "array", "items": {"type": "string"}},
-        "require_handover": {"type": "boolean"},
-        "mode": {"type": "string", "enum": ["wait_complete","early_provisional"]},
-        "label": {"type": "string"}
-      }},
-      "Watermark": {"type": "object", "properties": {
-        "id": {"type": "string", "format": "uuid"},
-        "scope_type": {"type": "string"}, "scope_key": {"type": "string"},
-        "cutoff_received_at": {"type": "string", "format": "date-time"},
-        "required_sources": {"type": "array", "items": {"type": "string"}},
-        "require_handover": {"type": "boolean"}, "mode": {"type": "string"},
-        "label": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"},
-        "closed_sources": {"type": "array", "items": {"type": "string"}},
-        "complete": {"type": "boolean"},
-        "missing_sources": {"type": "array", "items": {"type": "string"}}
-      }},
-      "PublishRequest": {"type": "object", "required": ["scope_type","scope_key","watermark_id"], "properties": {
-        "scope_type": {"type": "string", "enum": ["shipment","container","leg"]},
-        "scope_key": {"type": "string"}, "watermark_id": {"type": "string", "format": "uuid"},
-        "force": {"type": "boolean", "description": "忽略满员约束强行发布（仍会标为暂定或记录原因）"}
-      }},
-      "SnapshotDiff": {"type": "object", "properties": {
-        "previous_version": {"type": "integer"}, "status_from": {"type": "string"},
-        "status_to": {"type": "string"}, "result_from": {"type": "string"},
-        "result_to": {"type": "string"}, "completeness_from": {"type": "number"},
-        "completeness_to": {"type": "number"},
-        "pending_added": {"type": "array", "items": {"type": "string"}},
-        "pending_resolved": {"type": "array", "items": {"type": "string"}},
-        "conflicts_added": {"type": "array", "items": {"type": "string"}},
-        "conflicts_resolved": {"type": "array", "items": {"type": "string"}},
-        "new_event_ids": {"type": "array", "items": {"type": "string"}},
-        "corrections_added": {"type": "array", "items": {"type": "string"}},
-        "consumable_confirmed_changed": {"type": "boolean"},
-        "summary": {"type": "string"}
-      }},
-      "LineageEvent": {"type": "object", "properties": {
-        "seq": {"type": "integer"}, "event_id": {"type": "string"}, "source": {"type": "string"},
-        "message_type": {"type": "string"}, "received_at": {"type": "string", "format": "date-time"},
-        "content_hash": {"type": "string"}
-      }},
-      "GraphPin": {"type": "object", "properties": {
-        "link_key": {"type": "string"}, "link_version": {"type": "integer"},
-        "kind": {"type": "string"}, "subject_key": {"type": "string"}, "object_key": {"type": "string"}
-      }},
-      "Lineage": {"type": "object", "properties": {
-        "assessment_id": {"type": "string"},
-        "cutoff_received_at": {"type": "string", "format": "date-time"},
-        "max_seq": {"type": "integer"},
-        "input_events": {"type": "array", "items": {"$ref": "#/components/schemas/LineageEvent"}},
-        "input_graph_links": {"type": "array", "items": {"$ref": "#/components/schemas/GraphPin"}},
-        "input_rule_keys": {"type": "array", "items": {"type": "string"}},
-        "input_corrections": {"type": "array", "items": {"$ref": "#/components/schemas/Correction"}},
-        "evidence_weights": {"type": "object", "additionalProperties": {"type": "number"}},
-        "completeness_floor": {"type": "number"},
-        "previous_snapshot_id": {"type": "string"},
-        "result_hash": {"type": "string"}
-      }},
-      "SnapshotPayload": {"type": "object", "properties": {
-        "scope": {"type": "object", "properties": {"type": {"type": "string"}, "key": {"type": "string"}}},
-        "status": {"type": "string"},
-        "security_result": {"type": "string"},
-        "consumable_confirmed": {"type": "boolean"},
-        "snapshot_kind": {"type": "string", "enum": ["provisional","formal"]},
-        "watermark": {"type": "object"},
-        "evidence_completeness": {"type": "number"},
-        "completeness_components": {"type": "array", "items": {"$ref": "#/components/schemas/Component"}},
-        "packages": {"type": "array", "items": {"$ref": "#/components/schemas/PackageState"}},
-        "pending_items": {"type": "array", "items": {"$ref": "#/components/schemas/PendingItem"}},
-        "conflicts": {"type": "array", "items": {"$ref": "#/components/schemas/Conflict"}},
-        "corrections": {"type": "array", "items": {"$ref": "#/components/schemas/Correction"}},
-        "composition_versions": {"type": "array", "items": {"$ref": "#/components/schemas/CompositionVersion"}},
-        "timeline": {"type": "array", "items": {"$ref": "#/components/schemas/TimelineEntry"}},
-        "manifest_references": {"type": "array", "items": {"type": "object"}},
-        "decision_explanation": {"type": "string"},
-        "blocking_reasons": {"type": "array", "items": {"type": "string"}},
-        "quality_summary": {"$ref": "#/components/schemas/QualitySummary"},
-        "lineage": {"$ref": "#/components/schemas/Lineage"},
-        "derived_from": {"type": "array", "items": {"type": "object"}},
-        "note": {"type": "string"}
-      }},
-      "Snapshot": {"type": "object", "properties": {
-        "id": {"type": "string", "format": "uuid"},
-        "scope_type": {"type": "string"}, "scope_key": {"type": "string"},
-        "version": {"type": "integer"},
-        "snapshot_kind": {"type": "string", "enum": ["provisional","formal"]},
-        "watermark_id": {"type": "string"}, "assessment_id": {"type": "string"},
-        "cutoff_received_at": {"type": "string", "format": "date-time"},
-        "status": {"type": "string", "enum": ["verified","pending_evidence","conflict_pending","not_publishable"]},
-        "security_result": {"type": "string"},
-        "evidence_completeness": {"type": "number"},
-        "consumable_confirmed": {"type": "boolean"},
-        "quality_summary": {"$ref": "#/components/schemas/QualitySummary"},
-        "diff": {"$ref": "#/components/schemas/SnapshotDiff"},
-        "supersedes_snapshot_id": {"type": "string"},
-        "published_at": {"type": "string", "format": "date-time"},
-        "dataset": {"$ref": "#/components/schemas/SnapshotPayload"}
-      }},
-      "PublishResult": {"type": "object", "properties": {
-        "snapshot": {"$ref": "#/components/schemas/Snapshot"},
-        "watermark": {"$ref": "#/components/schemas/Watermark"},
-        "skipped": {"type": "boolean"}, "reason": {"type": "string"},
-        "diff": {"$ref": "#/components/schemas/SnapshotDiff"},
-        "assessment_id": {"type": "string"}
-      }},
-      "ReplayStep": {"type": "object", "properties": {
-        "name": {"type": "string"}, "status": {"type": "string", "enum": ["ok","mismatch","missing"]},
-        "detail": {"type": "string"}, "facts": {"type": "object"}, "mismatches": {"type": "array", "items": {"type": "string"}}
-      }},
-      "ReplayResult": {"type": "object", "properties": {
-        "snapshot_id": {"type": "string"},
-        "scope": {"type": "object", "properties": {"type": {"type": "string"}, "key": {"type": "string"}}},
-        "version": {"type": "integer"}, "snapshot_kind": {"type": "string"},
-        "published_status": {"type": "string"}, "recomputed_status": {"type": "string"},
-        "published_result_hash": {"type": "string"}, "recomputed_result_hash": {"type": "string"},
-        "deterministic_match": {"type": "boolean"},
-        "steps": {"type": "array", "items": {"$ref": "#/components/schemas/ReplayStep"}},
-        "input_events": {"type": "array", "items": {"$ref": "#/components/schemas/LineageEvent"}},
-        "input_graph_links": {"type": "array", "items": {"$ref": "#/components/schemas/GraphPin"}},
-        "composition_versions": {"type": "array", "items": {"$ref": "#/components/schemas/CompositionVersion"}},
-        "rule_findings": {"type": "array", "items": {"$ref": "#/components/schemas/RuleViolation"}},
-        "evidence_dispositions": {"type": "array", "items": {"$ref": "#/components/schemas/DispositionRow"}},
-        "corrections": {"type": "array", "items": {"$ref": "#/components/schemas/Correction"}},
-        "watermark": {"$ref": "#/components/schemas/Watermark"},
-        "diff_vs_previous": {"$ref": "#/components/schemas/SnapshotDiff"},
-        "summary": {"type": "string"}
-      }}
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "details": {}
+        }
+      },
+      "FieldSpec": {
+        "type": "object",
+        "required": [
+          "kind",
+          "required"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "enum",
+              "timestamp"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "enum": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FieldBinding": {
+        "type": "object",
+        "required": [
+          "name",
+          "spec"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/FieldSpec"
+          }
+        }
+      },
+      "ContractDefinition": {
+        "type": "object",
+        "required": [
+          "fields",
+          "policy"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldBinding"
+            }
+          },
+          "policy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "backward",
+              "free"
+            ]
+          }
+        }
+      },
+      "RegisterContractRequest": {
+        "type": "object",
+        "required": [
+          "source",
+          "message_type",
+          "compat",
+          "definition"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "compat": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "backward",
+              "free"
+            ]
+          },
+          "definition": {
+            "$ref": "#/components/schemas/ContractDefinition"
+          }
+        }
+      },
+      "Contract": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "compat": {
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/ContractDefinition"
+          },
+          "status": {
+            "type": "string"
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EventEnvelope": {
+        "type": "object",
+        "required": [
+          "message_type",
+          "occurred_at",
+          "payload"
+        ],
+        "properties": {
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "declaration",
+              "scan",
+              "screening",
+              "evidence",
+              "manual_review",
+              "container_stow",
+              "flight_manifest",
+              "package_change",
+              "handover"
+            ]
+          },
+          "source_code": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "来源内唯一幂等键；缺省时由设备事件号或内容派生"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "业务发生时间"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "平台接收时间；省略时为入库时刻"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "device_event_no": {
+            "type": "string",
+            "description": "设备事件号，用于同设备去重与时序"
+          },
+          "package_id": {
+            "type": "string"
+          },
+          "package_revision": {
+            "type": "string",
+            "description": "包装修订；规范化为数字"
+          },
+          "business_keys": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "业务键：awb/shipment/package/container/leg"
+          },
+          "evidence_indexes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supersedes_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "人工更正指向被更正事件"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ValidationResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "missing_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unmapped_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "IngestOutcome": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "duplicate_identical",
+              "duplicate_conflicting"
+            ]
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "duplicate_of": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidationResult"
+          },
+          "contract": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {},
+          "committed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "Seq": {
+            "type": "integer"
+          },
+          "EventID": {
+            "type": "string"
+          },
+          "Source": {
+            "type": "string"
+          },
+          "MessageType": {
+            "type": "string"
+          },
+          "SourceCode": {
+            "type": "string"
+          },
+          "ContractVersion": {
+            "type": "integer"
+          },
+          "IdempotencyKey": {
+            "type": "string"
+          },
+          "DedupeKey": {
+            "type": "string"
+          },
+          "BusinessKeys": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "RawBusinessKeys": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "PackageID": {
+            "type": "string"
+          },
+          "PackageKey": {
+            "type": "string"
+          },
+          "PackageRevision": {
+            "type": "string"
+          },
+          "ShipmentKey": {
+            "type": "string"
+          },
+          "DeviceID": {
+            "type": "string"
+          },
+          "DeviceEventNo": {
+            "type": "string"
+          },
+          "EvidenceIndexes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "OccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ReceivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "Payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "ContentHash": {
+            "type": "string"
+          },
+          "SupersedesEventID": {
+            "type": "string"
+          },
+          "MissingFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "UnmappedFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "IntakeAttempt": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "source_code": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "duplicate_identical",
+              "duplicate_conflicting",
+              "rejected"
+            ]
+          },
+          "detail": {},
+          "raw_event_id": {
+            "type": "string"
+          }
+        }
+      },
+      "GraphSubjects": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GraphLink": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "link_key": {
+            "type": "string"
+          },
+          "link_version": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "shipment_package",
+              "package_container",
+              "container_leg"
+            ]
+          },
+          "subject_type": {
+            "type": "string"
+          },
+          "subject_key": {
+            "type": "string"
+          },
+          "object_type": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "package_revision": {
+            "type": "string"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "retracted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retraction_knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retraction_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "CompositionVersion": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "package_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "cause": {
+            "type": "string"
+          }
+        }
+      },
+      "TimelineEntry": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "source_code": {
+            "type": "string"
+          },
+          "package_key": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "integer"
+          },
+          "stage_name": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sort_key": {
+            "type": "string"
+          },
+          "sequence_basis": {
+            "type": "string"
+          },
+          "clock_drift_ms": {
+            "type": "integer"
+          },
+          "sequence_no": {
+            "type": "string"
+          },
+          "package_revision": {
+            "type": "string"
+          },
+          "evidence_count": {
+            "type": "integer"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "anomalies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "QualitySummary": {
+        "type": "object",
+        "properties": {
+          "event_count": {
+            "type": "integer"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "violations_by_code": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "blocking_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warning_count": {
+            "type": "integer"
+          },
+          "info_count": {
+            "type": "integer"
+          },
+          "unaligned_evidence_count": {
+            "type": "integer"
+          },
+          "missing_required_fields": {
+            "type": "integer"
+          }
+        }
+      },
+      "RuleViolation": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "duplicate_retransmission",
+              "cross_package_reference",
+              "missing_handover",
+              "device_clock_drift",
+              "status_regression",
+              "inconsistent_source_encoding"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "blocker"
+            ]
+          },
+          "subject_type": {
+            "type": "string"
+          },
+          "subject_key": {
+            "type": "string"
+          },
+          "dedupe_key": {
+            "type": "string"
+          },
+          "knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detail": {},
+          "related_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "first_detected_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DispositionRow": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "package_key": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unknown_package",
+              "superseded_package",
+              "revision_mismatch",
+              "container_mismatch"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_message_type": {
+            "type": "string"
+          },
+          "event_source": {
+            "type": "string"
+          }
+        }
+      },
+      "PackageState": {
+        "type": "object",
+        "properties": {
+          "package_key": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "result_event_id": {
+            "type": "string"
+          },
+          "result_source": {
+            "type": "string"
+          },
+          "result_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "human_ruled": {
+            "type": "boolean"
+          },
+          "evidence_eligible": {
+            "type": "boolean"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "disposition_reason": {
+            "type": "string"
+          },
+          "screening_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "review_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resegment_count": {
+            "type": "integer"
+          },
+          "in_conflict": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Component": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          },
+          "contribution": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PendingItem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "package_key": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        }
+      },
+      "Conflict": {
+        "type": "object",
+        "properties": {
+          "package_key": {
+            "type": "string"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConflictSide"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ConflictSide": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Correction": {
+        "type": "object",
+        "properties": {
+          "correcting_event_id": {
+            "type": "string"
+          },
+          "superseded_event_id": {
+            "type": "string"
+          },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_result": {
+            "type": "string"
+          },
+          "to_result": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "AssessmentPreview": {
+        "type": "object",
+        "properties": {
+          "shipment_key": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "completeness_floor": {
+            "type": "number"
+          },
+          "fusion": {
+            "$ref": "#/components/schemas/FusionResult"
+          },
+          "rule_findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleViolation"
+            }
+          },
+          "dispositions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Disposition"
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            }
+          }
+        }
+      },
+      "Disposition": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "package_key": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "knowledge_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FusionResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "pending_evidence",
+              "conflict_pending",
+              "not_publishable"
+            ]
+          },
+          "security_result": {
+            "type": "string"
+          },
+          "evidence_completeness": {
+            "type": "number"
+          },
+          "completeness_components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Component"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageState"
+            }
+          },
+          "pending_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingItem"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Correction"
+            }
+          },
+          "blocking_rule_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocking_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_graph_links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_rule_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decision_explanation": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateWatermarkRequest": {
+        "type": "object",
+        "required": [
+          "scope_type",
+          "scope_key",
+          "required_sources",
+          "mode"
+        ],
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "shipment",
+              "container",
+              "leg",
+              "all"
+            ]
+          },
+          "scope_key": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "required_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "require_handover": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "wait_complete",
+              "early_provisional"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "Watermark": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope_type": {
+            "type": "string"
+          },
+          "scope_key": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "required_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "require_handover": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closed_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "missing_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PublishRequest": {
+        "type": "object",
+        "required": [
+          "scope_type",
+          "scope_key",
+          "watermark_id"
+        ],
+        "properties": {
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "shipment",
+              "container",
+              "leg"
+            ]
+          },
+          "scope_key": {
+            "type": "string"
+          },
+          "watermark_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "忽略满员约束强行发布（仍会标为暂定或记录原因）"
+          }
+        }
+      },
+      "SnapshotDiff": {
+        "type": "object",
+        "properties": {
+          "previous_version": {
+            "type": "integer"
+          },
+          "status_from": {
+            "type": "string"
+          },
+          "status_to": {
+            "type": "string"
+          },
+          "result_from": {
+            "type": "string"
+          },
+          "result_to": {
+            "type": "string"
+          },
+          "completeness_from": {
+            "type": "number"
+          },
+          "completeness_to": {
+            "type": "number"
+          },
+          "pending_added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pending_resolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conflicts_added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conflicts_resolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "new_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "corrections_added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "consumable_confirmed_changed": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "LineageEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "content_hash": {
+            "type": "string"
+          }
+        }
+      },
+      "GraphPin": {
+        "type": "object",
+        "properties": {
+          "link_key": {
+            "type": "string"
+          },
+          "link_version": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject_key": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          }
+        }
+      },
+      "Lineage": {
+        "type": "object",
+        "properties": {
+          "assessment_id": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "max_seq": {
+            "type": "integer"
+          },
+          "input_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineageEvent"
+            }
+          },
+          "input_graph_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphPin"
+            }
+          },
+          "input_rule_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Correction"
+            }
+          },
+          "evidence_weights": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "completeness_floor": {
+            "type": "number"
+          },
+          "previous_snapshot_id": {
+            "type": "string"
+          },
+          "result_hash": {
+            "type": "string"
+          }
+        }
+      },
+      "SnapshotPayload": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              }
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "security_result": {
+            "type": "string"
+          },
+          "consumable_confirmed": {
+            "type": "boolean"
+          },
+          "snapshot_kind": {
+            "type": "string",
+            "enum": [
+              "provisional",
+              "formal"
+            ]
+          },
+          "watermark": {
+            "type": "object"
+          },
+          "evidence_completeness": {
+            "type": "number"
+          },
+          "completeness_components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Component"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageState"
+            }
+          },
+          "pending_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingItem"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Correction"
+            }
+          },
+          "composition_versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionVersion"
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            }
+          },
+          "manifest_references": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "decision_explanation": {
+            "type": "string"
+          },
+          "blocking_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quality_summary": {
+            "$ref": "#/components/schemas/QualitySummary"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/Lineage"
+          },
+          "derived_from": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope_type": {
+            "type": "string"
+          },
+          "scope_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "snapshot_kind": {
+            "type": "string",
+            "enum": [
+              "provisional",
+              "formal"
+            ]
+          },
+          "watermark_id": {
+            "type": "string"
+          },
+          "assessment_id": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "pending_evidence",
+              "conflict_pending",
+              "not_publishable"
+            ]
+          },
+          "security_result": {
+            "type": "string"
+          },
+          "evidence_completeness": {
+            "type": "number"
+          },
+          "consumable_confirmed": {
+            "type": "boolean"
+          },
+          "quality_summary": {
+            "$ref": "#/components/schemas/QualitySummary"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/SnapshotDiff"
+          },
+          "supersedes_snapshot_id": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/SnapshotPayload"
+          }
+        }
+      },
+      "PublishResult": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          },
+          "watermark": {
+            "$ref": "#/components/schemas/Watermark"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/SnapshotDiff"
+          },
+          "assessment_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ReplayStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "mismatch",
+              "missing"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "facts": {
+            "type": "object"
+          },
+          "mismatches": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReplayResult": {
+        "type": "object",
+        "properties": {
+          "snapshot_id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              }
+            }
+          },
+          "version": {
+            "type": "integer"
+          },
+          "snapshot_kind": {
+            "type": "string"
+          },
+          "published_status": {
+            "type": "string"
+          },
+          "recomputed_status": {
+            "type": "string"
+          },
+          "published_result_hash": {
+            "type": "string"
+          },
+          "recomputed_result_hash": {
+            "type": "string"
+          },
+          "deterministic_match": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplayStep"
+            }
+          },
+          "input_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineageEvent"
+            }
+          },
+          "input_graph_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphPin"
+            }
+          },
+          "composition_versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompositionVersion"
+            }
+          },
+          "rule_findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleViolation"
+            }
+          },
+          "evidence_dispositions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DispositionRow"
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Correction"
+            }
+          },
+          "watermark": {
+            "$ref": "#/components/schemas/Watermark"
+          },
+          "diff_vs_previous": {
+            "$ref": "#/components/schemas/SnapshotDiff"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "TimeBound": {
+        "type": "object",
+        "description": "来源时钟可信区间。earliest=latest 表示来源报告了精确时刻；否则为已知误差范围。",
+        "required": [
+          "earliest",
+          "latest"
+        ],
+        "properties": {
+          "earliest": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latest": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "basis": {
+            "type": "string",
+            "description": "区间来源：declared|synchronizer_offset|receipt_exact|occurrence_order_only"
+          }
+        }
+      },
+      "ReviewScopeRequest": {
+        "type": "object",
+        "required": [
+          "shipment_key",
+          "included_systems",
+          "cutoff_received_at"
+        ],
+        "properties": {
+          "scope_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "included_systems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "included_streams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorized_subjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubjectRef"
+            }
+          },
+          "excluded_systems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "SubjectRef": {
+        "type": "object",
+        "required": [
+          "type",
+          "key"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "shipment",
+              "container",
+              "leg",
+              "package"
+            ]
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewScope": {
+        "type": "object",
+        "required": [
+          "scope_id",
+          "shipment_key",
+          "cutoff_received_at"
+        ],
+        "properties": {
+          "scope_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "included_systems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "included_streams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorized_subjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubjectRef"
+            }
+          },
+          "excluded_systems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string"
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewScopeList": {
+        "type": "object",
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewScope"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReviewMaterialSummary": {
+        "type": "object",
+        "properties": {
+          "scope_id": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "record_count": {
+            "type": "integer"
+          },
+          "by_kind": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "by_system": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "material_hash": {
+            "type": "string"
+          }
+        }
+      },
+      "MembershipClaim": {
+        "type": "object",
+        "required": [
+          "link_kind",
+          "subjects",
+          "objects"
+        ],
+        "properties": {
+          "link_kind": {
+            "type": "string",
+            "enum": [
+              "shipment_package",
+              "package_container",
+              "container_leg"
+            ]
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReviewEventDraft": {
+        "type": "object",
+        "required": [
+          "ref",
+          "system",
+          "occurred"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "调用方句柄；发布的 input_event_refs 用它引用本批次事件"
+          },
+          "system": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectRef"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/MembershipClaim"
+          },
+          "evidence_indexes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_sequence": {
+            "type": "string",
+            "description": "来源内序号；仅同来源同启动区段内可比较"
+          },
+          "boot_segment": {
+            "type": "string",
+            "description": "设备重启分界；跨区段编号不比较"
+          },
+          "occurred": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "received": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "classification": {
+            "type": "string",
+            "description": "如 verdict/archive，用于证据依赖"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewPublicationDraft": {
+        "type": "object",
+        "required": [
+          "ref",
+          "snapshot_id",
+          "subject",
+          "published_at"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectRef"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "snapshot_kind": {
+            "type": "string",
+            "enum": [
+              "provisional",
+              "formal"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "pending_evidence",
+              "conflict_pending",
+              "not_publishable"
+            ]
+          },
+          "security_result": {
+            "type": "string"
+          },
+          "consumable_confirmed": {
+            "type": "boolean"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "平台自身发布时钟"
+          },
+          "source_sequence": {
+            "type": "string"
+          },
+          "boot_segment": {
+            "type": "string"
+          },
+          "input_event_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "发布所依赖的事实，必须先于该次发布"
+          },
+          "supersedes_snapshot_id": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "membership": {
+            "$ref": "#/components/schemas/MembershipClaim"
+          }
+        }
+      },
+      "ReviewReadDraft": {
+        "type": "object",
+        "required": [
+          "ref",
+          "system"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "system": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          },
+          "source_sequence": {
+            "type": "string"
+          },
+          "boot_segment": {
+            "type": "string"
+          },
+          "occurred": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "received": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "referenced_snapshot_id": {
+            "type": "string",
+            "description": "只能引用已经存在的快照版本"
+          },
+          "observed": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewFactsDraft": {
+        "type": "object",
+        "required": [
+          "ref",
+          "system",
+          "source_sequence"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "system": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          },
+          "boot_segment": {
+            "type": "string"
+          },
+          "source_sequence": {
+            "type": "string",
+            "description": "单系统发生序锚点"
+          },
+          "occurred": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "received": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewLogImport": {
+        "type": "object",
+        "properties": {
+          "scope_id": {
+            "type": "string",
+            "description": "路径已给出时可省略"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewEventDraft"
+            }
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewFactsDraft"
+            }
+          },
+          "publications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewPublicationDraft"
+            }
+          },
+          "reads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewReadDraft"
+            }
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ScopeDecision": {
+        "type": "object",
+        "properties": {
+          "record_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewImportResult": {
+        "type": "object",
+        "properties": {
+          "scope_id": {
+            "type": "string"
+          },
+          "imported_count": {
+            "type": "integer"
+          },
+          "batch_key": {
+            "type": "string"
+          },
+          "excluded": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeDecision"
+            }
+          },
+          "late_arrivals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeDecision"
+            },
+            "description": "截止点之后收到的记录：只能进入新的复核"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReviewCaseCreate": {
+        "type": "object",
+        "required": [
+          "scope_id"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewCase": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewClaim": {
+        "type": "object",
+        "required": [
+          "level",
+          "key"
+        ],
+        "description": "一条被查询断言的截面状态。可同时携带截图显示的计数与成员关系；计数与状态必须来自同一发布版本。",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "shipment",
+              "container",
+              "leg"
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "为空且给出 membership 时表示只问历史归属关系"
+          },
+          "consumable_confirmed": {
+            "type": "boolean"
+          },
+          "at": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "source": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "截图显示的数字字段；必须来自与状态相同的发布版本，不能跨快照拼接"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/MembershipClaim",
+            "description": "关系断言；历史归属沿当时生效的引用判断，当前集装器不能代替旧位置"
+          },
+          "requires_image": {
+            "type": "boolean",
+            "description": "仅凭原图才能确认的内容；资料缺少原图时不宣称已验证，但不推翻已有时间关系"
+          }
+        }
+      },
+      "ReviewTarget": {
+        "type": "object",
+        "required": [
+          "shipment_key"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "description": "路径已给出时可省略"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "shipment",
+                "container",
+                "leg"
+              ]
+            }
+          },
+          "instant": {
+            "$ref": "#/components/schemas/TimeBound",
+            "description": "待查时刻；状态问题必须给出，截图时间不能直接当来源发生时刻"
+          },
+          "read_record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewClaim"
+            }
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "allowed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_read_logs": {
+            "type": "boolean"
+          },
+          "authorized_subjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubjectRef"
+            },
+            "description": "范围授权额外可披露的货件（用于多货件比较）；必须已在范围内登记"
+          }
+        }
+      },
+      "ReviewRunRequest": {
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ReviewTarget"
+          },
+          "budget": {
+            "type": "integer",
+            "description": "可行查询次数上限；耗尽时明确报告搜索尚未完成"
+          },
+          "cross_check": {
+            "type": "boolean",
+            "description": "对小规模资料另用穷举对照"
+          },
+          "cross_check_cap": {
+            "type": "integer"
+          },
+          "allowed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReviewReproduceRequest": {
+        "type": "object",
+        "properties": {
+          "budget": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReviewConstraint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "window|received|sequence|causal|effective|distinct|scope"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "max_gap_ns": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "guard_record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConflictSet": {
+        "type": "object",
+        "description": "一组已无法同时满足的原始记录与条件；不声称最小，也不声称唯一根因。",
+        "properties": {
+          "record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AssertionResult": {
+        "type": "object",
+        "properties": {
+          "assertion_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "contradicted",
+              "both_explain",
+              "undetermined",
+              "consistent"
+            ]
+          },
+          "candidate_coverage": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "positive_example": {
+            "type": "object"
+          },
+          "negative_example": {
+            "type": "object"
+          },
+          "conflict": {
+            "$ref": "#/components/schemas/ConflictSet"
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternative_shapes": {
+            "type": "integer"
+          },
+          "shapes_checked": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReviewAnalysis": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "shipment_key": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "target_instant": {
+            "$ref": "#/components/schemas/TimeBound"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "type": "string"
+              },
+              "contradicted": {
+                "type": "integer"
+              },
+              "both_explain": {
+                "type": "integer"
+              },
+              "undetermined": {
+                "type": "integer"
+              },
+              "consistent_checks": {
+                "type": "integer"
+              },
+              "budget_exhausted": {
+                "type": "boolean"
+              },
+              "no_contradiction_is_not_proof": {
+                "type": "string"
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssertionResult"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewConstraint"
+            }
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "budget": {
+            "type": "object"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReviewScope"
+          },
+          "excluded_records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeDecision"
+            }
+          },
+          "material": {
+            "type": "object",
+            "properties": {
+              "record_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "count": {
+                "type": "integer"
+              },
+              "hash": {
+                "type": "string"
+              }
+            }
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewRun": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "case_id": {
+            "type": "string"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "cutoff_received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ReviewTarget"
+          },
+          "summary_verdict": {
+            "type": "string"
+          },
+          "budget_exhausted": {
+            "type": "boolean"
+          },
+          "material_record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "material_hash": {
+            "type": "string"
+          },
+          "analysis": {
+            "$ref": "#/components/schemas/ReviewAnalysis"
+          },
+          "cross_check": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReviewRunResult": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/ReviewRun"
+          },
+          "cross_check": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "restricted_material": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "ReviewRunList": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewRun"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReviewExampleList": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReviewExportRequest": {
+        "type": "object",
+        "properties": {
+          "allowed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ReviewExport": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReviewScope"
+          },
+          "allowed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssertionResult"
+            }
+          },
+          "boundary_records": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "redactions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "projection_integrity": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

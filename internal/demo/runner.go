@@ -141,6 +141,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	if err := r.manifestGapScenario(ctx); err != nil {
 		return nil, err
 	}
+	if err := r.reviewScenario(ctx); err != nil {
+		return nil, err
+	}
 	r.verifyAtEnd(ctx)
 
 	r.rep.FinishedAt = r.now

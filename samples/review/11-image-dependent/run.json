@@ -1,0 +1,22 @@
+{
+  "target": {
+    "shipment_key": "AWB70000000006D",
+    "levels": [
+      "shipment"
+    ],
+    "instant": {
+      "earliest": "2026-11-17T10:10:00Z",
+      "latest": "2026-11-17T10:20:00Z",
+      "basis": "declared"
+    },
+    "cutoff_received_at": "2026-11-17T22:00:00Z",
+    "claims": [
+      {
+        "level": "shipment",
+        "key": "AWB70000000006D",
+        "status": "verified",
+        "requires_image": true
+      }
+    ]
+  }
+}

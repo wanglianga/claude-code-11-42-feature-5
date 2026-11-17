@@ -1,0 +1,22 @@
+{
+  "budget": 2,
+  "target": {
+    "shipment_key": "AWB70000000007",
+    "levels": [
+      "shipment"
+    ],
+    "instant": {
+      "earliest": "2026-11-17T10:00:00Z",
+      "latest": "2026-11-17T12:00:00Z",
+      "basis": "declared"
+    },
+    "cutoff_received_at": "2026-11-17T22:00:00Z",
+    "claims": [
+      {
+        "level": "shipment",
+        "key": "AWB70000000007",
+        "status": "verified"
+      }
+    ]
+  }
+}

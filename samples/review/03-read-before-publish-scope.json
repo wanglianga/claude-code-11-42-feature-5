@@ -1,0 +1,10 @@
+{
+  "shipment_key": "AWB70000000003",
+  "label": "read-before-publish",
+  "included_systems": [
+    "platform",
+    "reading"
+  ],
+  "cutoff_received_at": "2026-11-17T22:00:00Z",
+  "note": "读取记录引用了当时尚未发布的版本"
+}
